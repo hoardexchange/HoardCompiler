@@ -42,10 +42,12 @@
       <Group guid="guidGolemCompilerPackageCmdSet" id="ProjContextMenuGroup" priority="0x0000">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_PROJNODE" />
       </Group>
+      <Group guid="guidGolemCompilerPackageCmdSet" id="XProjContextMenuGroup" priority="0x0000">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_XPROJ_MULTIPROJ" />
+      </Group>      
       <Group guid="guidGolemCompilerPackageCmdSet" id="SlnContextMenuGroup" priority="0x0000">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_SOLNNODE" />
       </Group>
-
     </Groups>
 
     <!--Buttons section. -->
@@ -73,6 +75,20 @@
           <ButtonText>Golem distributed build solution</ButtonText>
         </Strings>
       </Button>
+      <Button guid="guidGolemCompilerPackageCmdSet" id="ProjBuildCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidGolemCompilerPackageCmdSet" id="ProjContextMenuGroup" />
+        <Icon guid="guidImages" id="bmpPic1" />
+        <Strings>
+          <ButtonText>Golem distributed build project</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="guidGolemCompilerPackageCmdSet" id="XProjBuildCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidGolemCompilerPackageCmdSet" id="XProjContextMenuGroup" />
+        <Icon guid="guidImages" id="bmpPic1" />
+        <Strings>
+          <ButtonText>Golem distributed build projects</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
 
     <!--The bitmaps section is used to define the bitmaps that are used for the commands.-->
@@ -97,6 +113,9 @@
       <IDSymbol name="SlnContextMenuGroup" value="0x1021" />
       <IDSymbol name="SlnBuildCommandId" value="0x0101" />
       <IDSymbol name="ProjContextMenuGroup" value="0x1022" />
+      <IDSymbol name="ProjBuildCommandId" value="0x0102" />
+      <IDSymbol name="XProjContextMenuGroup" value="0x1023" />
+      <IDSymbol name="XProjBuildCommandId" value="0x0103" />
     </GuidSymbol>
 
     <GuidSymbol name="guidImages" value="{82bef9ea-7aaf-4108-bef0-b5de2b862a7f}" >

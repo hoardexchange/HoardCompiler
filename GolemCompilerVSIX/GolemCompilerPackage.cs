@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using EnvDTE;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.OLE.Interop;
 using Microsoft.VisualStudio.Shell;
@@ -49,6 +50,7 @@ namespace GolemCompilerVSIX
         public const string PackageGuidString = "58caa410-0099-4620-a7b4-8cce182d193b";
 
 		public IVsOutputWindowPane m_outputPane;
+        public DTE m_dte;
         /// <summary>
         /// Initializes a new instance of the <see cref="GolemCompilerPackage"/> class.
         /// </summary>
@@ -81,6 +83,8 @@ namespace GolemCompilerVSIX
 
             hresult = outputWindow.GetPane(outputPaneId, out m_outputPane);
             ErrorHandler.ThrowOnFailure(hresult);
+
+            m_dte = (DTE)GetService(typeof(DTE));
 
             m_outputPane.Activate();
             m_outputPane.OutputString("Golem Compiler extension initialized and ready to run!");

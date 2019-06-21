@@ -1,8 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Globalization;
+using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.VCProjectEngine;
 
 namespace GolemCompilerVSIX
 {
@@ -16,8 +19,8 @@ namespace GolemCompilerVSIX
         /// </summary>
         public const int CommandId = 0x0100;
         public const int SlnCommandId = 0x0101;
-        public const int ContextCommandId = 0x0102;
-        public const int SlnContextCommandId = 0x0103;
+        public const int ProjCommandId = 0x0102;
+        public const int XProjCommandId = 0x0103;
 
 
         /// <summary>
@@ -28,7 +31,7 @@ namespace GolemCompilerVSIX
         /// <summary>
         /// VS Package that provides this command, not null.
         /// </summary>
-        private readonly Package package;
+        private readonly GolemCompilerPackage package;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BuildCommand"/> class.
@@ -42,25 +45,25 @@ namespace GolemCompilerVSIX
                 throw new ArgumentNullException("package");
             }
 
-            this.package = package;
+            this.package = (GolemCompilerPackage)package;
 
-            OleMenuCommandService commandService = this.ServiceProvider.GetService(typeof(IMenuCommandService)) as OleMenuCommandService;
+            OleMenuCommandService commandService = ServiceProvider.GetService(typeof(IMenuCommandService)) as OleMenuCommandService;
             if (commandService != null)
             {
                 var menuCommandID = new CommandID(CommandSet, CommandId);
-                var menuItem = new MenuCommand(this.MenuItemCallback, menuCommandID);
+                var menuItem = new MenuCommand(SolutionItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
 
                 menuCommandID = new CommandID(CommandSet, SlnCommandId);
-                menuItem = new MenuCommand(this.MenuItemCallback, menuCommandID);
+                menuItem = new MenuCommand(SolutionItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
 
-                menuCommandID = new CommandID(CommandSet, ContextCommandId);
-                menuItem = new MenuCommand(this.MenuItemCallback, menuCommandID);
+                menuCommandID = new CommandID(CommandSet, ProjCommandId);
+                menuItem = new MenuCommand(ProjItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
 
-                menuCommandID = new CommandID(CommandSet, SlnContextCommandId);
-                menuItem = new MenuCommand(this.MenuItemCallback, menuCommandID);
+                menuCommandID = new CommandID(CommandSet, XProjCommandId);
+                menuItem = new MenuCommand(ProjItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
             }
         }
@@ -93,22 +96,82 @@ namespace GolemCompilerVSIX
         {
             Instance = new BuildCommand(package);
         }
+        
+        private void ProjItemCallback(object sender, EventArgs e)
+        {            
+            List<VCProject> projects = new List<VCProject>();
 
-        /// <summary>
-        /// This function is the callback used to execute the command when the menu item is clicked.
-        /// See the constructor to see how the menu item is associated with this function using
-        /// OleMenuCommandService service and MenuCommand class.
-        /// </summary>
-        /// <param name="sender">Event sender.</param>
-        /// <param name="e">Event args.</param>
-        private void MenuItemCallback(object sender, EventArgs e)
+            package.m_dte.ExecuteCommand("File.SaveAll");
+
+            foreach (var item in package.m_dte.SelectedItems)
+            {
+                Project proj = (item as SelectedItem).Project;
+                if (proj != null)
+                {
+                    VCProject vcp = proj.Object as VCProject;
+                    AddProject(vcp, projects);
+                }
+            }
+
+            RequestBuildProjects(projects);
+        }
+        
+        private void SolutionItemCallback(object sender, EventArgs e)
         {
-            string message = string.Format(CultureInfo.CurrentCulture, "Inside {0}.MenuItemCallback()", this.GetType().FullName);
-            string title = "BuildCommand";
+            if (null == package.m_dte.Solution)
+                return;
 
-            // Show a message box to prove we were here
+            package.m_outputPane.Activate();
+            package.m_outputPane.Clear();
+
+            if (package.m_dte.Debugger.CurrentMode != dbgDebugMode.dbgDesignMode)
+            {
+                package.m_outputPane.OutputString("Build not launched due to active debugger.\r");
+                return;
+            }
+
+            package.m_dte.ExecuteCommand("File.SaveAll");
+            
+            //list projects to be build
+            Solution sln = package.m_dte.Solution;
+
+            List<VCProject> projects = new List<VCProject>();
+
+            foreach (var item in sln.Projects)
+            {
+                Project proj = (item as Project);
+                if (proj != null)
+                {
+                    VCProject vcp = proj.Object as VCProject;
+                    AddProject(vcp, projects);
+                }
+            }
+
+            RequestBuildProjects(projects);
+        }
+
+        private void AddProject(VCProject vcp, List<VCProject> projects)
+        {
+            if (vcp != null && !projects.Contains(vcp))
+            {
+                //check references
+                foreach (VCReference r in vcp.VCReferences)
+                {
+                    VCProjectReference vcref = r as VCProjectReference;
+                    if (vcref != null && vcref.ReferencedProject != null)
+                        AddProject(vcref.ReferencedProject.Object, projects);
+                }
+                projects.Add(vcp);
+            }
+        }
+
+        private void RequestBuildProjects(List<VCProject> projects)
+        {
+            string message = string.Format(CultureInfo.CurrentCulture, "Found {0} projects to build", projects.Count);
+            string title = "BuildCommand";
+            
             VsShellUtilities.ShowMessageBox(
-                this.ServiceProvider,
+                ServiceProvider,
                 message,
                 title,
                 OLEMSGICON.OLEMSGICON_INFO,
