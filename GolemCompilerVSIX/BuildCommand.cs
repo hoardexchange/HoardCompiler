@@ -105,7 +105,7 @@ namespace GolemCompilerVSIX
 
             foreach (var item in package.m_dte.SelectedItems)
             {
-                Project proj = (item as SelectedItem).Project;
+                EnvDTE.Project proj = (item as SelectedItem).Project;
                 if (proj != null)
                 {
                     VCProject vcp = proj.Object as VCProject;
@@ -139,7 +139,7 @@ namespace GolemCompilerVSIX
 
             foreach (var item in sln.Projects)
             {
-                Project proj = (item as Project);
+                EnvDTE.Project proj = (item as EnvDTE.Project);
                 if (proj != null)
                 {
                     VCProject vcp = proj.Object as VCProject;
@@ -167,7 +167,22 @@ namespace GolemCompilerVSIX
 
         private void RequestBuildProjects(List<VCProject> projects)
         {
+            Solution sln = package.m_dte.Solution;
+            var sc = sln.SolutionBuild.ActiveConfiguration as EnvDTE80.SolutionConfiguration2;
+
+            GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
+
+            foreach (VCProject p in projects)
+            {
+                builder.BuildProject(p.ProjectFile, sc.Name, sc.PlatformName);
+            }
+
             string message = string.Format(CultureInfo.CurrentCulture, "Found {0} projects to build", projects.Count);
+            foreach(VCProject p in projects)
+            {
+                message += "\nPROJECT:" + p.ProjectFile;
+                message += builder.GetProjectInformation(p.ProjectFile);
+            }
             string title = "BuildCommand";
             
             VsShellUtilities.ShowMessageBox(
