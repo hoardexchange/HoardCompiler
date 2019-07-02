@@ -10,13 +10,10 @@ using Microsoft.VisualStudio.VCProjectEngine;
 namespace GolemCompilerVSIX
 {
     /// <summary>
-    /// Command handler
+    /// Build command handler
     /// </summary>
     internal sealed class BuildCommand
     {
-        /// <summary>
-        /// Command ID.
-        /// </summary>
         public const int CommandId = 0x0100;
         public const int SlnCommandId = 0x0101;
         public const int ProjCommandId = 0x0102;
@@ -50,18 +47,22 @@ namespace GolemCompilerVSIX
             OleMenuCommandService commandService = ServiceProvider.GetService(typeof(IMenuCommandService)) as OleMenuCommandService;
             if (commandService != null)
             {
+                //build command in the build menu
                 var menuCommandID = new CommandID(CommandSet, CommandId);
                 var menuItem = new MenuCommand(SolutionItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
 
+                //build command in the solution context menu
                 menuCommandID = new CommandID(CommandSet, SlnCommandId);
                 menuItem = new MenuCommand(SolutionItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
 
+                //build command in the project context menu
                 menuCommandID = new CommandID(CommandSet, ProjCommandId);
                 menuItem = new MenuCommand(ProjItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
 
+                //build command when there more than one project is selected
                 menuCommandID = new CommandID(CommandSet, XProjCommandId);
                 menuItem = new MenuCommand(ProjItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
@@ -101,9 +102,9 @@ namespace GolemCompilerVSIX
         {            
             List<VCProject> projects = new List<VCProject>();
 
-            package.m_dte.ExecuteCommand("File.SaveAll");
+            package.Dte.ExecuteCommand("File.SaveAll");
 
-            foreach (var item in package.m_dte.SelectedItems)
+            foreach (var item in package.Dte.SelectedItems)
             {
                 EnvDTE.Project proj = (item as SelectedItem).Project;
                 if (proj != null)
@@ -118,22 +119,22 @@ namespace GolemCompilerVSIX
         
         private void SolutionItemCallback(object sender, EventArgs e)
         {
-            if (null == package.m_dte.Solution)
+            if (null == package.Dte.Solution)
                 return;
 
-            package.m_outputPane.Activate();
-            package.m_outputPane.Clear();
+            package.OutputPane.Activate();
+            package.OutputPane.Clear();
 
-            if (package.m_dte.Debugger.CurrentMode != dbgDebugMode.dbgDesignMode)
+            if (package.Dte.Debugger.CurrentMode != dbgDebugMode.dbgDesignMode)
             {
-                package.m_outputPane.OutputString("Build not launched due to active debugger.\r");
+                package.OutputPane.OutputString("Build not launched due to active debugger.\r");
                 return;
             }
 
-            package.m_dte.ExecuteCommand("File.SaveAll");
+            package.Dte.ExecuteCommand("File.SaveAll");
             
             //list projects to be build
-            Solution sln = package.m_dte.Solution;
+            Solution sln = package.Dte.Solution;
 
             List<VCProject> projects = new List<VCProject>();
 
@@ -150,6 +151,11 @@ namespace GolemCompilerVSIX
             RequestBuildProjects(projects);
         }
 
+        /// <summary>
+        /// This recursive function will add project and all its dependencies in a sorted way
+        /// </summary>
+        /// <param name="vcp"></param>
+        /// <param name="projects"></param>
         private void AddProject(VCProject vcp, List<VCProject> projects)
         {
             if (vcp != null && !projects.Contains(vcp))
@@ -165,12 +171,21 @@ namespace GolemCompilerVSIX
             }
         }
 
+        /// <summary>
+        /// Start projects building
+        /// </summary>
+        /// <param name="projects"></param>
         private void RequestBuildProjects(List<VCProject> projects)
         {
-            Solution sln = package.m_dte.Solution;
+            Solution sln = package.Dte.Solution;
             var sc = sln.SolutionBuild.ActiveConfiguration as EnvDTE80.SolutionConfiguration2;
 
             GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
+
+            builder.OnMessage += (str) =>
+            {
+                package.OutputPane.OutputString(str+"\n");
+            };
 
             foreach (VCProject p in projects)
             {

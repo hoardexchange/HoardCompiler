@@ -14,11 +14,14 @@ using Microsoft.Win32;
 
 namespace GolemCompilerVSIX
 {
+    /// <summary>
+    /// Page in Options menu for customization
+    /// </summary>
 	public class OptionPageGrid : DialogPage
 	{
         [Category("GolemCompiler")]
-        [DisplayName("url to Golem Hub")]
-        [Description("Can be used to specify the url to Golem Hub")]
+        [DisplayName("Golem Hub Url")]
+        [Description("Address of the Golem Hub")]
         public string OptionGolemHubUrl
         {
             get;
@@ -26,8 +29,8 @@ namespace GolemCompilerVSIX
         } = "localhost:8080";
 
         [Category("GolemCompiler")]
-        [DisplayName("Use unity files")]
-        [Description("Whether to attempt to use 'unity' files to speed up compilation. May require modifying some headers.")]
+        [DisplayName("Create unity files")]
+        [Description("Whether to attempt to use 'unity' files to speed up compilation. May require modification of some headers.")]
         public bool OptionUseUnity
         {
             get;
@@ -35,6 +38,9 @@ namespace GolemCompilerVSIX
         } = false;
 	}
 
+    /// <summary>
+    /// Main package of GolemCompiler project
+    /// </summary>
     [PackageRegistration(UseManagedResourcesOnly = true)]
     [InstalledProductRegistration("#110", "#112", "0.1", IconResourceID = 400)] // Info on this package for Help/About
     [Guid(GolemCompilerPackage.PackageGuidString)]
@@ -49,8 +55,8 @@ namespace GolemCompilerVSIX
         /// </summary>
         public const string PackageGuidString = "58caa410-0099-4620-a7b4-8cce182d193b";
 
-		public IVsOutputWindowPane m_outputPane;
-        public DTE m_dte;
+		public IVsOutputWindowPane OutputPane { get; private set; }
+        public DTE Dte { get; private set; }
         /// <summary>
         /// Initializes a new instance of the <see cref="GolemCompilerPackage"/> class.
         /// </summary>
@@ -72,22 +78,27 @@ namespace GolemCompilerVSIX
         {
             base.Initialize();
 
+            //Add build commands
             BuildCommand.Initialize(this);
 
             var outputWindow = GetService(typeof(SVsOutputWindow)) as IVsOutputWindow;
             if (outputWindow == null) return;
 
             var outputPaneId = VSConstants.OutputWindowPaneGuid.GeneralPane_guid;
+            //Create Golem Compiler output window
             var hresult = outputWindow.CreatePane(outputPaneId, "GolemCompiler", 1, 0);
             ErrorHandler.ThrowOnFailure(hresult);
 
-            hresult = outputWindow.GetPane(outputPaneId, out m_outputPane);
+            IVsOutputWindowPane pane = null;
+            hresult = outputWindow.GetPane(outputPaneId, out pane);
+            OutputPane = pane;
             ErrorHandler.ThrowOnFailure(hresult);
 
-            m_dte = (DTE)GetService(typeof(DTE));
+            //This is the main environment interface
+            Dte = (DTE)GetService(typeof(DTE));
 
-            m_outputPane.Activate();
-            m_outputPane.OutputString("Golem Compiler extension initialized and ready to run!");
+            OutputPane.Activate();
+            OutputPane.OutputString("Golem Compiler extension initialized and ready to run!");
         }
 
         #endregion

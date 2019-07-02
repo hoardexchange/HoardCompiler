@@ -11,9 +11,15 @@ namespace GolemBuild
 {
     public class GolemBuild
     {
+        public event Action<string> OnError;
+        public event Action<string> OnMessage;
+
+        private List<CompilationTask> tasks = new List<CompilationTask>();
+
         public bool BuildProject(string projPath, string configuration, string platform)
         {
             ProjectCollection projColl = new ProjectCollection();
+            //load the project
             Project project = projColl.LoadProject(projPath);
 
             if (project != null)
@@ -21,8 +27,8 @@ namespace GolemBuild
                 project.SetGlobalProperty("Configuration", configuration);
                 project.SetGlobalProperty("Platform", platform);
                 project.ReevaluateIfNecessary();
-
-                var ProjectReferences = project.Items.Where(elem => elem.ItemType == "ProjectReference");
+                                
+                //var ProjectReferences = project.Items.Where(elem => elem.ItemType == "ProjectReference");
                 /*foreach (var ProjRef in ProjectReferences)
                 {
                     if (ProjRef.GetMetadataValue("ReferenceOutputAssembly") == "true" || ProjRef.GetMetadataValue("LinkLibraryDependencies") == "true")
@@ -33,22 +39,34 @@ namespace GolemBuild
                 }
                 //Console.WriteLine("Adding " + Path.GetFileNameWithoutExtension(proj.FullPath));
                 evaluatedProjects.Add(newProj);*/
+                CreateCompilationTasks(project);
+                
+                return BuildTasks();
             }
 
-            List<CompilationTask> tasks = CreateCompilationTasks(project);
+            OnError?.Invoke("Could not load project " + projPath);
 
+            return false;
+        }
+
+        private bool BuildTasks()
+        {
+            for(int i=0;i<tasks.Count;++i)
+            {
+                var task = tasks[i];
+                OnMessage?.Invoke(string.Format("Task [#{0}]: {1} {2} {3} {4}", i, task.Compiler, task.CompilerArgs, task.FilePath, task.OutputPath));
+            }
             return true;
         }
 
-        private List<CompilationTask> CreateCompilationTasks(Project project)
+        private void CreateCompilationTasks(Project project)
         {
-            List<CompilationTask> tasks = new List<CompilationTask>();
             //in VS2017 this semms to be the proper one
             string VCTargetsPath = project.GetPropertyValue("VCTargetsPathEffective");
             if (string.IsNullOrEmpty(VCTargetsPath))
             {
                 Console.WriteLine("Failed to evaluate VCTargetsPath variable on " + System.IO.Path.GetFileName(project.FullPath) + ". Is this a supported version of Visual Studio?");
-                return tasks;
+                return;
             }
             string BuildDllPath = VCTargetsPath + (VCTargetsPath.Contains("v110") ? "Microsoft.Build.CPPTasks.Common.v110.dll" : "Microsoft.Build.CPPTasks.Common.dll");
             Assembly CPPTasksAssembly = Assembly.LoadFrom(BuildDllPath);
@@ -103,7 +121,7 @@ namespace GolemBuild
                 tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", item.GetMetadataValue("PrecompiledHeaderOutputFile")));
             }
 
-            return tasks;
+            return;
         }
 
         private string GetCompilerPath(Project project)
@@ -127,7 +145,7 @@ namespace GolemBuild
             var sysRoot = project.GetProperty("SystemRoot").EvaluatedValue;
 
             //name depends on comilation platform and source platform
-            string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x64_x86").EvaluatedValue, "cl.exe");
+            string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x86").EvaluatedValue, "cl.exe");
             return clPath;
         }
 
@@ -190,7 +208,7 @@ namespace GolemBuild
             }
 
             var GenCmdLineMethod = Task.GetType().GetRuntimeMethods().Where(meth => meth.Name == "GenerateCommandLine").First();
-            return GenCmdLineMethod.Invoke(Task, new object[] { Type.Missing, Type.Missing }) as string;
+            return GenCmdLineMethod.Invoke(Task, new object[] { Type.Missing, Type.Missing}) as string;
         }
 
     }
