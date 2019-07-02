@@ -13,6 +13,9 @@
     <DelaySign>false</DelaySign>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\gurestapi\src\gu_rest_api\GURestApi.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <Reference Include="Microsoft.Build" />
     <Reference Include="Microsoft.Build.Utilities.v4.0" />
   </ItemGroup>
