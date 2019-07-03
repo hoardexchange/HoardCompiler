@@ -97,7 +97,7 @@ namespace GolemCompilerVSIX
         {
             Instance = new BuildCommand(package);
         }
-        
+
         private void ProjItemCallback(object sender, EventArgs e)
         {            
             List<VCProject> projects = new List<VCProject>();
@@ -185,6 +185,11 @@ namespace GolemCompilerVSIX
             builder.OnMessage += (str) =>
             {
                 package.OutputPane.OutputString(str+"\n");
+            };
+
+            builder.OnClear += () =>
+            {
+                package.OutputPane.Clear();
             };
 
             foreach (VCProject p in projects)
