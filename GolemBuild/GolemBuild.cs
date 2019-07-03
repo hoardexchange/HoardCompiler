@@ -142,11 +142,90 @@ namespace GolemBuild
                 return false;
             }
 
-            OnMessage.Invoke("- Compilation succeeded -");
-
             // Linking
+            string configurationType = project.GetPropertyValue("ConfigurationType");
+            string outputFile = "";
 
-            return true;
+            string VCTargetsPath = project.GetPropertyValue("VCTargetsPathEffective");
+            if (string.IsNullOrEmpty(VCTargetsPath))
+            {
+                OnMessage.Invoke("Failed to evaluate VCTargetsPath variable on " + System.IO.Path.GetFileName(project.FullPath) + ". Is this a supported version of Visual Studio?");
+                return false;
+            }
+            string BuildDllPath = VCTargetsPath + (VCTargetsPath.Contains("v110") ? "Microsoft.Build.CPPTasks.Common.v110.dll" : "Microsoft.Build.CPPTasks.Common.dll");
+            Assembly CPPTasksAssembly = Assembly.LoadFrom(BuildDllPath);
+
+            string linkerPath = "";
+
+            object linkTask = null;
+            string linkerOptions = "";
+
+            if (configurationType == "StaticLibrary")
+            {
+                var libDefinitions = project.ItemDefinitions["Lib"];
+                linkTask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.LIB"));
+                linkerOptions = GenerateTaskCommandLine(linkTask, new string[] { "OutputFile" }, libDefinitions.Metadata);
+                outputFile = libDefinitions.GetMetadataValue("OutputFile").Replace('\\', '/');
+                linkerPath = GetLibPath(project);
+            }
+            else // Exe or DLL
+            {
+                var linkDefinitions = project.ItemDefinitions["Link"];
+                linkTask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.Link"));
+                linkerOptions = GenerateTaskCommandLine(linkTask, new string[] { "OutputFile", "ProfileGuidedDatabase" }, linkDefinitions.Metadata);
+                outputFile = linkDefinitions.GetMetadataValue("OutputFile").Replace('\\', '/');
+                linkerPath = GetLinkerPath(project);
+            }
+
+            
+            Process linkerProcess = new Process();
+
+            linkerProcess.StartInfo.FileName = "cmd.exe";
+            linkerProcess.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+            linkerProcess.StartInfo.UseShellExecute = false;
+            linkerProcess.StartInfo.RedirectStandardInput = true;
+            linkerProcess.StartInfo.RedirectStandardOutput = true;
+            linkerProcess.StartInfo.RedirectStandardError = true;
+            linkerProcess.StartInfo.CreateNoWindow = true;
+
+            linkerProcess.Start();
+            StreamReader linkOutput = linkerProcess.StandardOutput;
+            linkerProcess.StandardInput.WriteLine("\"" + GetDevCmdPath(project) + "\"");
+
+            string linkCommand = "\"" + linkerPath + "\" " + linkerOptions + " /OUT:\"" + outputFile + "\"";
+
+            //all compiled obj files
+            foreach (var task in tasks)
+            {
+                linkCommand += " \"" + Path.Combine(projectPath, Path.ChangeExtension(task.FilePath, ".obj")) + "\"";
+            }
+
+            linkerProcess.StandardInput.WriteLine(linkCommand); // Execute task
+            linkerProcess.StandardInput.WriteLine("exit");
+            linkerProcess.WaitForExit();
+
+            bool linkSuccessful = true;
+            while (linkOutput.Peek() >= 0)
+            {
+                string output = linkOutput.ReadLine();
+                if (output.Contains(" error") || output.Contains("fatal error"))
+                {
+                    OnMessage.Invoke("[LINK ERROR]: " + output);
+                    linkSuccessful = false;
+                }
+            }
+
+            if (linkSuccessful)
+            {
+                OnMessage.Invoke("- Compilation successful -");
+                OnMessage.Invoke("-> " + outputFile);
+                return true;
+            }
+
+            OnMessage.Invoke("- Compilation failed -");
+
+
+            return false;
         }
 
         private void FindIncludes(Project project, string fileName, List<string> includePaths, ref List<string> includes, ref List<string> localIncludes)
@@ -217,8 +296,8 @@ namespace GolemBuild
                 else if (isInMultilineComment && line.Contains("*/"))
                 {
                     int to = line.IndexOf("*/") + 1;
-                    if (to != line.Length - 1)
-                        line = line.Substring(to, line.Length - 1);
+                    if (to < line.Length - 1)
+                        line = line.Substring(to);
                     isInMultilineComment = false;
                 }
                 else if (isInMultilineComment)
@@ -408,6 +487,62 @@ namespace GolemBuild
             //name depends on comilation platform and source platform
             string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x86").EvaluatedValue, "cl.exe");
             return clPath;
+        }
+
+        private string GetLinkerPath(Project project)
+        {
+            var PlatformToolsetVersion = project.GetProperty("PlatformToolsetVersion").EvaluatedValue;
+
+            string OutDir = project.GetProperty("OutDir").EvaluatedValue;
+            string IntDir = project.GetProperty("IntDir").EvaluatedValue;
+
+            var vsDir = project.GetProperty("VSInstallDir").EvaluatedValue;
+
+            var WindowsSDKTarget = project.GetProperty("WindowsTargetPlatformVersion") != null ? project.GetProperty("WindowsTargetPlatformVersion").EvaluatedValue : "8.1";
+
+            var sdkDir = project.GetProperty("WindowsSdkDir").EvaluatedValue;
+
+            var incPath = project.GetProperty("IncludePath").EvaluatedValue;
+            var libPath = project.GetProperty("LibraryPath").EvaluatedValue;
+            var refPath = project.GetProperty("ReferencePath").EvaluatedValue;
+            var path = project.GetProperty("Path").EvaluatedValue;
+            var temp = project.GetProperty("Temp").EvaluatedValue;
+            var sysRoot = project.GetProperty("SystemRoot").EvaluatedValue;
+
+            //name depends on comilation platform and source platform
+            string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x86").EvaluatedValue, "link.exe");
+            return clPath;
+        }
+
+        private string GetLibPath(Project project)
+        {
+            var PlatformToolsetVersion = project.GetProperty("PlatformToolsetVersion").EvaluatedValue;
+
+            string OutDir = project.GetProperty("OutDir").EvaluatedValue;
+            string IntDir = project.GetProperty("IntDir").EvaluatedValue;
+
+            var vsDir = project.GetProperty("VSInstallDir").EvaluatedValue;
+
+            var WindowsSDKTarget = project.GetProperty("WindowsTargetPlatformVersion") != null ? project.GetProperty("WindowsTargetPlatformVersion").EvaluatedValue : "8.1";
+
+            var sdkDir = project.GetProperty("WindowsSdkDir").EvaluatedValue;
+
+            var incPath = project.GetProperty("IncludePath").EvaluatedValue;
+            var libPath = project.GetProperty("LibraryPath").EvaluatedValue;
+            var refPath = project.GetProperty("ReferencePath").EvaluatedValue;
+            var path = project.GetProperty("Path").EvaluatedValue;
+            var temp = project.GetProperty("Temp").EvaluatedValue;
+            var sysRoot = project.GetProperty("SystemRoot").EvaluatedValue;
+
+            //name depends on comilation platform and source platform
+            string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x86").EvaluatedValue, "lib.exe");
+            return clPath;
+        }
+
+        private string GetDevCmdPath(Project project)
+        {
+            var vsDir = project.GetProperty("VSInstallDir").EvaluatedValue;
+            return Path.Combine(vsDir, "Common7", "Tools", "VsDevCmd.bat");
         }
 
         public string GetProjectInformation(string projectFile)
