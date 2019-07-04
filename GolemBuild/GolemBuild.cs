@@ -18,6 +18,7 @@ namespace GolemBuild
         public event Action<string> OnMessage;
         public event Action OnClear;
 
+        private List<CompilationTask> pchTasks = new List<CompilationTask>();
         private List<CompilationTask> tasks = new List<CompilationTask>();
 
         public bool BuildProject(string projPath, string configuration, string platform)
@@ -48,13 +49,125 @@ namespace GolemBuild
                 //Console.WriteLine("Adding " + Path.GetFileNameWithoutExtension(proj.FullPath));
                 evaluatedProjects.Add(newProj);*/
                 CreateCompilationTasks(project);
-                
-                return BuildTasks(project);
+
+                if (pchTasks.Count > 0)
+                {
+                    OnMessage.Invoke("Compiling Precompiled Headers...");
+                    if (!BuildPCHTaks(project))
+                    {
+                        OnMessage.Invoke("- Compilation failed -");
+                        return false;
+                    }
+                }
+
+                OnMessage.Invoke("Compiling...");
+                if (!BuildTasks(project))
+                {
+                    OnMessage.Invoke("- Compilation failed -");
+                    return false;
+                }
+
+                OnMessage.Invoke("Linking...");
+                string outputFile;
+                if (!LinkProject(project, out outputFile))
+                {
+                    OnMessage.Invoke("- Linking failed -");
+                    return false;
+                }
+
+                OnMessage.Invoke("-> " + outputFile);
+                OnMessage.Invoke("- Compilation successful -");
+
+                return true;
             }
 
             OnError?.Invoke("Could not load project " + projPath);
 
             return false;
+        }
+
+        private bool BuildPCHTaks(Project project)
+        {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
+
+            // Print tasks
+            for (int i = 0; i < pchTasks.Count; ++i)
+            {
+                var task = pchTasks[i];
+                OnMessage?.Invoke(string.Format("PCH Task [#{0}]: {1} {2} {3} {4}", i, task.Compiler, task.CompilerArgs, task.FilePath, task.OutputPath));
+            }
+
+            Process[] processes = new Process[pchTasks.Count];
+            StreamReader[] outputs = new StreamReader[pchTasks.Count];
+            bool[] hasFinished = new bool[pchTasks.Count];
+            
+            // Start all compilation processes
+            for (int i = 0; i < pchTasks.Count; i++)
+            {
+                processes[i] = new Process();
+
+                processes[i].StartInfo.FileName = "cmd.exe";//task.Compiler;
+                processes[i].StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                processes[i].StartInfo.UseShellExecute = false;
+                processes[i].StartInfo.RedirectStandardInput = true;
+                processes[i].StartInfo.RedirectStandardOutput = true;
+                processes[i].StartInfo.RedirectStandardError = true;
+                processes[i].StartInfo.CreateNoWindow = true;
+
+                processes[i].Start();
+                outputs[i] = processes[i].StandardOutput;
+
+                processes[i].StandardInput.WriteLine(projectPath[0] + ":"); // Change drive
+                processes[i].StandardInput.WriteLine("cd " + projectPath); // CD
+                processes[i].StandardInput.WriteLine("\"" + pchTasks[i].Compiler + "\" " + pchTasks[i].CompilerArgs + " /Fp\"" + pchTasks[i].OutputPath + "\" " + pchTasks[i].FilePath); // Execute task
+                processes[i].StandardInput.WriteLine("exit");
+            }
+
+            // Finish all compilation processes
+            bool stillRunning = true;
+            bool compilationSucceeded = true;
+            while (stillRunning)
+            {
+                bool allFinished = true;
+                for (int i = 0; i < pchTasks.Count; i++)
+                {
+                    if (processes[i].HasExited)
+                    {
+                        if (!hasFinished[i])
+                        {
+                            hasFinished[i] = true;
+
+                            bool error = false;
+                            while (outputs[i].Peek() >= 0)
+                            {
+                                string output = outputs[i].ReadLine();
+                                if (output.Contains(" error") || output.Contains("fatal error"))
+                                {
+                                    OnMessage.Invoke("[ERROR] " + pchTasks[i].FilePath + ": " + output);
+                                    error = true;
+                                    compilationSucceeded = false;
+                                }
+                            }
+
+                            if (!error)
+                            {
+                                OnMessage.Invoke("[SUCCESS] " + pchTasks[i].FilePath);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        allFinished = false;
+                    }
+                }
+
+                if (allFinished)
+                    stillRunning = false;
+                else
+                    Thread.Sleep(25);
+            }
+
+            return compilationSucceeded;
         }
 
         private bool BuildTasks(Project project)
@@ -136,15 +249,16 @@ namespace GolemBuild
                     Thread.Sleep(25);
             }
 
-            if (!compilationSucceeded)
-            {
-                OnMessage.Invoke("- Compilation failed -");
-                return false;
-            }
+            return compilationSucceeded;
+        }
+
+        bool LinkProject(Project project, out string outputFile)
+        {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
 
             // Linking
             string configurationType = project.GetPropertyValue("ConfigurationType");
-            string outputFile = "";
+            outputFile = "";
 
             string VCTargetsPath = project.GetPropertyValue("VCTargetsPathEffective");
             if (string.IsNullOrEmpty(VCTargetsPath))
@@ -156,10 +270,8 @@ namespace GolemBuild
             Assembly CPPTasksAssembly = Assembly.LoadFrom(BuildDllPath);
 
             string linkerPath = "";
-
             object linkTask = null;
             string linkerOptions = "";
-
             if (configurationType == "StaticLibrary")
             {
                 var libDefinitions = project.ItemDefinitions["Lib"];
@@ -177,7 +289,6 @@ namespace GolemBuild
                 linkerPath = GetLinkerPath(project);
             }
 
-            
             Process linkerProcess = new Process();
 
             linkerProcess.StartInfo.FileName = "cmd.exe";
@@ -193,6 +304,12 @@ namespace GolemBuild
             linkerProcess.StandardInput.WriteLine("\"" + GetDevCmdPath(project) + "\"");
 
             string linkCommand = "\"" + linkerPath + "\" " + linkerOptions + " /OUT:\"" + outputFile + "\"";
+
+            //all pch files
+            foreach (var task in pchTasks)
+            {
+                linkCommand += " \"" + Path.Combine(projectPath, Path.ChangeExtension(task.FilePath, ".obj")) + "\"";
+            }
 
             //all compiled obj files
             foreach (var task in tasks)
@@ -215,17 +332,7 @@ namespace GolemBuild
                 }
             }
 
-            if (linkSuccessful)
-            {
-                OnMessage.Invoke("- Compilation successful -");
-                OnMessage.Invoke("-> " + outputFile);
-                return true;
-            }
-
-            OnMessage.Invoke("- Compilation failed -");
-
-
-            return false;
+            return linkSuccessful;
         }
 
         private void FindIncludes(Project project, string fileName, List<string> includePaths, ref List<string> includes, ref List<string> localIncludes)
@@ -392,7 +499,7 @@ namespace GolemBuild
                         var CLtask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                         CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
                         string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ObjectFileName", "AssemblerListingLocation" }, item.Metadata);//FS or MP?
-                        tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", item.GetMetadataValue("PrecompiledHeaderOutputFile")));
+                        pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", item.GetMetadataValue("PrecompiledHeaderOutputFile")));
                     }
                 }
             }
@@ -438,17 +545,17 @@ namespace GolemBuild
                 else
                     args += " /TP";
 
-                //args += " /FS"; // Force synchronous PDB writes // If we ever want one single pdb file per distributed node, this is how to do it
+                args += " /FS"; // Force synchronous PDB writes // If we ever want one single pdb file per distributed node, this is how to do it
 
-                string buildPath = Path.Combine(Path.GetDirectoryName(project.FullPath), "GolemBuild");
+                /*string buildPath = Path.Combine(Path.GetDirectoryName(project.FullPath), "GolemBuild");
                 if (!Directory.Exists(buildPath))
                 {
                     Directory.CreateDirectory(buildPath);
                 }
 
 
-                args += " /Fd\"GolemBuild\\" + Path.GetFileNameWithoutExtension(item.EvaluatedInclude) + "\"";
-
+                args += " /Fd\"GolemBuild\\" + Path.GetFileNameWithoutExtension(item.EvaluatedInclude) + "\"";*/ // Use this for having one pdb per object file, this has issues with pch
+                
                 string includePathString = "";
                 foreach(string includePath in includePaths)
                 {
@@ -491,24 +598,6 @@ namespace GolemBuild
 
         private string GetLinkerPath(Project project)
         {
-            var PlatformToolsetVersion = project.GetProperty("PlatformToolsetVersion").EvaluatedValue;
-
-            string OutDir = project.GetProperty("OutDir").EvaluatedValue;
-            string IntDir = project.GetProperty("IntDir").EvaluatedValue;
-
-            var vsDir = project.GetProperty("VSInstallDir").EvaluatedValue;
-
-            var WindowsSDKTarget = project.GetProperty("WindowsTargetPlatformVersion") != null ? project.GetProperty("WindowsTargetPlatformVersion").EvaluatedValue : "8.1";
-
-            var sdkDir = project.GetProperty("WindowsSdkDir").EvaluatedValue;
-
-            var incPath = project.GetProperty("IncludePath").EvaluatedValue;
-            var libPath = project.GetProperty("LibraryPath").EvaluatedValue;
-            var refPath = project.GetProperty("ReferencePath").EvaluatedValue;
-            var path = project.GetProperty("Path").EvaluatedValue;
-            var temp = project.GetProperty("Temp").EvaluatedValue;
-            var sysRoot = project.GetProperty("SystemRoot").EvaluatedValue;
-
             //name depends on comilation platform and source platform
             string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x86").EvaluatedValue, "link.exe");
             return clPath;
@@ -516,24 +605,6 @@ namespace GolemBuild
 
         private string GetLibPath(Project project)
         {
-            var PlatformToolsetVersion = project.GetProperty("PlatformToolsetVersion").EvaluatedValue;
-
-            string OutDir = project.GetProperty("OutDir").EvaluatedValue;
-            string IntDir = project.GetProperty("IntDir").EvaluatedValue;
-
-            var vsDir = project.GetProperty("VSInstallDir").EvaluatedValue;
-
-            var WindowsSDKTarget = project.GetProperty("WindowsTargetPlatformVersion") != null ? project.GetProperty("WindowsTargetPlatformVersion").EvaluatedValue : "8.1";
-
-            var sdkDir = project.GetProperty("WindowsSdkDir").EvaluatedValue;
-
-            var incPath = project.GetProperty("IncludePath").EvaluatedValue;
-            var libPath = project.GetProperty("LibraryPath").EvaluatedValue;
-            var refPath = project.GetProperty("ReferencePath").EvaluatedValue;
-            var path = project.GetProperty("Path").EvaluatedValue;
-            var temp = project.GetProperty("Temp").EvaluatedValue;
-            var sysRoot = project.GetProperty("SystemRoot").EvaluatedValue;
-
             //name depends on comilation platform and source platform
             string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x86").EvaluatedValue, "lib.exe");
             return clPath;
