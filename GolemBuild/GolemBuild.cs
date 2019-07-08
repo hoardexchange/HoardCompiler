@@ -26,6 +26,22 @@ namespace GolemBuild
             //load the project
             Project project = projColl.LoadProject(projPath);
 
+
+            string projectPath = Path.GetDirectoryName(project.FullPath);
+            string golemBuildPath = Path.Combine(projectPath, "GolemBuild");
+
+            // Clear GolemBuild directory
+            System.IO.DirectoryInfo di = new DirectoryInfo(golemBuildPath);
+
+            foreach (FileInfo file in di.GetFiles())
+            {
+                file.Delete();
+            }
+            foreach (DirectoryInfo dir in di.GetDirectories())
+            {
+                dir.Delete(true);
+            }
+
             OnClear.Invoke();
             OnMessage.Invoke("--- Compiling " + Path.GetFileNameWithoutExtension(projPath) + " " + configuration + " " + platform + " with GolemBuild ---");
             
@@ -59,18 +75,32 @@ namespace GolemBuild
                     }
                 }
 
-                OnMessage.Invoke("Packaging tasks...");
-                if (!PackageTasks(project))
-                {
-                    OnMessage.Invoke("- Packaging failed -");
-                    return false;
-                }
+                const bool runDistributed = true; // TODO: Figure out if we are attached to a broker or not
 
-                OnMessage.Invoke("Compiling...");
-                if (!BuildTasks(project))
+                if (runDistributed)
                 {
-                    OnMessage.Invoke("- Compilation failed -");
-                    return false;
+                    OnMessage.Invoke("Packaging tasks...");
+                    if (!PackageTasks(project))
+                    {
+                        OnMessage.Invoke("- Packaging failed -");
+                        return false;
+                    }
+
+                    OnMessage.Invoke("Compiling packaged tasks...");
+                    if (!BuildPackagedTasks(project))
+                    {
+                        OnMessage.Invoke("- Compiling packaged tasks failed -");
+                        return false;
+                    }
+                }
+                else
+                {
+                    OnMessage.Invoke("Compiling...");
+                    if (!BuildTasks(project))
+                    {
+                        OnMessage.Invoke("- Compilation failed -");
+                        return false;
+                    }
                 }
 
                 OnMessage.Invoke("Linking...");
@@ -175,10 +205,9 @@ namespace GolemBuild
                         if (File.Exists(srcFilePath))
                         {
                             string dstFilePath = Path.Combine(dstIncludePath, include);
-                            //if (!Directory.Exists(Path.GetDirectoryName(dstFilePath)))
                             Directory.CreateDirectory(Path.GetDirectoryName(dstFilePath));
 
-                            File.Copy(srcFilePath, dstFilePath);
+                            File.Copy(srcFilePath, dstFilePath, true);
                             foundFile = true;
                             break;
                         }
@@ -186,7 +215,34 @@ namespace GolemBuild
 
                     if (!foundFile)
                     {
-                        OnMessage.Invoke("Error: Could not find include file " + include);
+                        OnMessage.Invoke("Warning: Could not find include file " + include);
+                    }
+                }
+
+                foreach (string include in tasks[i].LocalIncludes)
+                {
+                    if (!File.Exists(Path.Combine(projectPath, include)))
+                    {
+                        bool foundFile = false;
+                        foreach (string srcIncludePath in tasks[i].IncludeDirs)
+                        {
+                            string srcFilePath = Path.Combine(srcIncludePath, include);
+
+                            if (File.Exists(srcFilePath))
+                            {
+                                string dstFilePath = Path.Combine(dstIncludePath, include);
+                                Directory.CreateDirectory(Path.GetDirectoryName(dstFilePath));
+
+                                File.Copy(srcFilePath, dstFilePath, true);
+                                foundFile = true;
+                                break;
+                            }
+                        }
+
+                        if (!foundFile)
+                        {
+                            OnMessage.Invoke("Warning: Could not find local include file " + include);
+                        }
                     }
                 }
 
@@ -198,7 +254,7 @@ namespace GolemBuild
                     {
                         string dstFilePath = Path.Combine(taskPath, include);
 
-                        File.Copy(srcFilePath, dstFilePath);
+                        File.Copy(srcFilePath, dstFilePath, true);
                     }
                 }
 
@@ -206,7 +262,7 @@ namespace GolemBuild
                 Directory.CreateDirectory(Path.Combine(taskPath, "output"));
 
                 // Create build batch
-                string batchPath = Path.Combine(taskPath, "build.bat");
+                string batchPath = Path.Combine(taskPath, "golembuild.bat");
                 StreamWriter batch = File.CreateText(batchPath);
 
                 string compilerArgs = tasks[i].CompilerArgs;
@@ -219,7 +275,7 @@ namespace GolemBuild
                 if (tasks[i].PDB.Length > 0)
                 {
                     string srcPdb = tasks[i].PDB;
-                    string dstPdb = Path.Combine("output", Path.GetFileName(tasks[i].PDB));
+                    string dstPdb = Path.Combine("output", Path.ChangeExtension(Path.GetFileName(tasks[i].FilePath), ".pdb"));
                     batch.WriteLine("copy \"" + srcPdb + "\" \"" + dstPdb + "\""); 
                 }
                 
@@ -227,6 +283,98 @@ namespace GolemBuild
                 //batch.WriteLine("exit");
             }
             return true;
+        }
+
+        private bool BuildPackagedTasks(Project project)
+        {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
+            string golemBuildPath = Path.Combine(projectPath, "GolemBuild");
+            Directory.CreateDirectory(golemBuildPath);
+
+            string golemBuildTasksPath = Path.Combine(projectPath, "GolemBuildTasks");
+
+            Process[] processes = new Process[tasks.Count];
+            StreamReader[] outputs = new StreamReader[tasks.Count];
+            bool[] hasFinished = new bool[tasks.Count];
+
+            // Start building packaged tasks
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                string taskPath = Path.Combine(golemBuildTasksPath, Path.GetFileNameWithoutExtension(tasks[i].FilePath));
+
+                processes[i] = new Process();
+
+                processes[i].StartInfo.FileName = "cmd.exe";
+                processes[i].StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                processes[i].StartInfo.UseShellExecute = false;
+                processes[i].StartInfo.RedirectStandardInput = true;
+                processes[i].StartInfo.RedirectStandardOutput = true;
+                processes[i].StartInfo.RedirectStandardError = true;
+                processes[i].StartInfo.CreateNoWindow = true;
+
+                processes[i].Start();
+                outputs[i] = processes[i].StandardOutput;
+
+                processes[i].StandardInput.WriteLine(taskPath[0] + ":"); // Change drive
+                processes[i].StandardInput.WriteLine("cd \"" + taskPath + "\""); // CD
+                processes[i].StandardInput.WriteLine("golembuild"); // Build
+                processes[i].StandardInput.WriteLine("exit");
+            }
+
+            // Finish all compilation processes
+            bool stillRunning = true;
+            bool compilationSucceeded = true;
+            while (stillRunning)
+            {
+                bool allFinished = true;
+                for (int i = 0; i < tasks.Count; i++)
+                {
+                    if (processes[i].HasExited)
+                    {
+                        if (!hasFinished[i])
+                        {
+                            hasFinished[i] = true;
+
+                            bool error = false;
+                            while (outputs[i].Peek() >= 0)
+                            {
+                                string output = outputs[i].ReadLine();
+                                if (output.Contains(" error") || output.Contains("fatal error"))
+                                {
+                                    OnMessage.Invoke("[ERROR] " + tasks[i].FilePath + ": " + output);
+                                    error = true;
+                                    compilationSucceeded = false;
+                                }
+                            }
+
+                            if (!error)
+                            {
+                                OnMessage.Invoke("[SUCCESS] " + tasks[i].FilePath);
+
+                                // Copy files from output folder to GolemBuild folder
+                                string taskPath = Path.Combine(golemBuildTasksPath, Path.GetFileNameWithoutExtension(tasks[i].FilePath));
+                                string outputPath = Path.Combine(taskPath, "output");
+
+                                foreach (string file in Directory.EnumerateFiles(outputPath))
+                                {
+                                    File.Copy(file, Path.Combine(golemBuildPath, Path.GetFileName(file)));
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        allFinished = false;
+                    }
+                }
+
+                if (allFinished)
+                    stillRunning = false;
+                else
+                    Thread.Sleep(25);
+            }
+
+            return compilationSucceeded;
         }
 
         private bool BuildPCHTasks(Project project)
@@ -273,7 +421,10 @@ namespace GolemBuild
                 }
                 compilerArgs += includeDirString;
 
-                processes[i].StandardInput.WriteLine("\"" + pchTasks[i].Compiler + "\" " + compilerArgs + " /Fp\"" + pchTasks[i].OutputPath + "\" " + pchTasks[i].FilePath); // Execute task
+                compilerArgs += " /Fp\"" + pchTasks[i].OutputPath + "\" ";
+                compilerArgs += " /Fo\"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(pchTasks[i].FilePath, ".obj")) + "\" ";
+
+                processes[i].StandardInput.WriteLine("\"" + pchTasks[i].Compiler + "\" " + compilerArgs + pchTasks[i].FilePath); // Execute task
                 processes[i].StandardInput.WriteLine("exit");
             }
 
@@ -365,6 +516,7 @@ namespace GolemBuild
                         includeDirString += " /I \"" + includeDir + "\"";
                 }
                 compilerArgs += includeDirString;
+                compilerArgs += " /Fo\"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(tasks[i].FilePath, ".obj")) + "\" ";
 
                 processes[i].StandardInput.WriteLine("\"" + tasks[i].Compiler + "\" " + compilerArgs + " " + tasks[i].FilePath); // Execute task
                 processes[i].StandardInput.WriteLine("exit");
@@ -473,13 +625,13 @@ namespace GolemBuild
             //all pch files
             foreach (var task in pchTasks)
             {
-                linkCommand += " \"" + Path.Combine(projectPath, Path.ChangeExtension(task.FilePath, ".obj")) + "\"";
+                linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(task.FilePath, ".obj")) + "\"";
             }
 
             //all compiled obj files
             foreach (var task in tasks)
             {
-                linkCommand += " \"" + Path.Combine(projectPath, Path.ChangeExtension(task.FilePath, ".obj")) + "\"";
+                linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(task.FilePath, ".obj")) + "\"";
             }
 
             linkerProcess.StandardInput.WriteLine(linkCommand); // Execute task
@@ -639,6 +791,7 @@ namespace GolemBuild
 
         private void CreateCompilationTasks(Project project)
         {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
             //in VS2017 this semms to be the proper one
             string VCTargetsPath = project.GetPropertyValue("VCTargetsPathEffective");
             if (string.IsNullOrEmpty(VCTargetsPath))
@@ -650,7 +803,6 @@ namespace GolemBuild
             Assembly CPPTasksAssembly = Assembly.LoadFrom(BuildDllPath);
 
             string compilerPath = GetCompilerPath(project);
-            string outputPath = "";
 
             // Figure out include paths
             List<string> includePaths = new List<string>();
@@ -688,6 +840,7 @@ namespace GolemBuild
                         var CLtask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                         CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
                         string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ObjectFileName", "AssemblerListingLocation" }, item.Metadata);//FS or MP?
+
                         pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", item.GetMetadataValue("ProgramDataBaseFileName"), item.GetMetadataValue("PrecompiledHeaderOutputFile"), includePaths, includes, localIncludes));
                     }
                 }
@@ -734,9 +887,14 @@ namespace GolemBuild
 
 
                 args += " /Fd\"GolemBuild\\" + Path.GetFileNameWithoutExtension(item.EvaluatedInclude) + "\"";*/ // Use this for having one pdb per object file, this has issues with pch
-                
-                //TODO: guess which pch is going to be used (there can be probably only one)
-                tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, item.GetMetadataValue("PrecompiledHeaderOutputFile"), item.GetMetadataValue("ProgramDataBaseFileName"), "", includePaths, includes, localIncludes));
+
+                string pch = "";
+                if (pchTasks.Count > 0)
+                {
+                    pch = item.GetMetadataValue("PrecompiledHeaderOutputFile");
+                }
+
+                tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, pch, item.GetMetadataValue("ProgramDataBaseFileName"), "", includePaths, includes, localIncludes));
             }
 
             return;
