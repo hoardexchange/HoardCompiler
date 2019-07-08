@@ -2,12 +2,11 @@
 using Microsoft.Build.Utilities;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Text.RegularExpressions;
-using System.Diagnostics;
 using System.Threading;
 
 namespace GolemBuild
@@ -53,11 +52,18 @@ namespace GolemBuild
                 if (pchTasks.Count > 0)
                 {
                     OnMessage.Invoke("Compiling Precompiled Headers...");
-                    if (!BuildPCHTaks(project))
+                    if (!BuildPCHTasks(project))
                     {
                         OnMessage.Invoke("- Compilation failed -");
                         return false;
                     }
+                }
+
+                OnMessage.Invoke("Packaging tasks...");
+                if (!PackageTasks(project))
+                {
+                    OnMessage.Invoke("- Packaging failed -");
+                    return false;
                 }
 
                 OnMessage.Invoke("Compiling...");
@@ -86,7 +92,144 @@ namespace GolemBuild
             return false;
         }
 
-        private bool BuildPCHTaks(Project project)
+        private bool PackageTasks(Project project)
+        {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
+            string golemBuildPath = Path.Combine(projectPath, "GolemBuildTasks");
+
+            Directory.CreateDirectory(golemBuildPath);
+
+            // Clear GolemBuildTasks directory
+            System.IO.DirectoryInfo di = new DirectoryInfo(golemBuildPath);
+
+            foreach (FileInfo file in di.GetFiles())
+            {
+                file.Delete();
+            }
+            foreach (DirectoryInfo dir in di.GetDirectories())
+            {
+                dir.Delete(true);
+            }
+
+            // Package tasks
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                string taskPath = Path.Combine(golemBuildPath, Path.GetFileNameWithoutExtension(tasks[i].FilePath));
+                Directory.CreateDirectory(taskPath);
+
+                // Package executables and necessary dlls
+                string compilerDir = Path.GetDirectoryName(tasks[i].Compiler);
+                foreach (string file in Directory.EnumerateFiles(compilerDir))
+                {
+                    if (Path.GetExtension(file) == ".exe" || Path.GetExtension(file) == ".dll")
+                    {
+                        File.Copy(file, Path.Combine(taskPath, Path.GetFileName(file)));
+                    }
+                }
+
+                foreach (string dir in Directory.EnumerateDirectories(compilerDir))
+                {
+                    if (Directory.GetFiles(dir).Length > 0)
+                    {
+                        string taskSubDir = Path.Combine(taskPath, Path.GetFileName(dir));
+                        Directory.CreateDirectory(taskSubDir);
+
+                        foreach (string file in Directory.EnumerateFiles(dir))
+                        {
+                            File.Copy(file, Path.Combine(taskSubDir, Path.GetFileName(file)));
+                        }
+                    }
+                }
+
+                // Package precompiled header if used
+                if (tasks[i].PrecompiledHeader.Length > 0)
+                {
+                    string dstPchPath = Path.Combine(taskPath, tasks[i].PrecompiledHeader);
+                    Directory.CreateDirectory(Path.GetDirectoryName(dstPchPath));
+                    File.Copy(Path.Combine(projectPath, tasks[i].PrecompiledHeader), dstPchPath);
+                }
+
+                // Package pdb and idb if used
+                if (tasks[i].PDB.Length > 0)
+                {
+                    string dstPdbPath = Path.Combine(taskPath, tasks[i].PDB);
+                    Directory.CreateDirectory(Path.GetDirectoryName(dstPdbPath));
+                    File.Copy(Path.Combine(projectPath, tasks[i].PDB), dstPdbPath); // PDB
+                    File.Copy(Path.Combine(projectPath, Path.ChangeExtension(tasks[i].PDB, ".idb")), Path.ChangeExtension(dstPdbPath, ".idb")); // IDB
+                }
+
+                // Package sourcefile
+                File.Copy(Path.Combine(projectPath, tasks[i].FilePath), Path.Combine(taskPath, tasks[i].FilePath));
+
+                // Package includes
+                string dstIncludePath = Path.Combine(taskPath, "includes");
+                Directory.CreateDirectory(dstIncludePath);
+
+                foreach (string include in tasks[i].Includes)
+                {
+                    bool foundFile = false;
+                    foreach (string srcIncludePath in tasks[i].IncludeDirs)
+                    {
+                        string srcFilePath = Path.Combine(srcIncludePath, include);
+
+                        if (File.Exists(srcFilePath))
+                        {
+                            string dstFilePath = Path.Combine(dstIncludePath, include);
+                            //if (!Directory.Exists(Path.GetDirectoryName(dstFilePath)))
+                            Directory.CreateDirectory(Path.GetDirectoryName(dstFilePath));
+
+                            File.Copy(srcFilePath, dstFilePath);
+                            foundFile = true;
+                            break;
+                        }
+                    }
+
+                    if (!foundFile)
+                    {
+                        OnMessage.Invoke("Error: Could not find include file " + include);
+                    }
+                }
+
+                // Package local includes
+                foreach (string include in tasks[i].LocalIncludes)
+                {
+                    string srcFilePath = Path.Combine(projectPath, include);
+                    if (File.Exists(srcFilePath))
+                    {
+                        string dstFilePath = Path.Combine(taskPath, include);
+
+                        File.Copy(srcFilePath, dstFilePath);
+                    }
+                }
+
+                // Create output directory
+                Directory.CreateDirectory(Path.Combine(taskPath, "output"));
+
+                // Create build batch
+                string batchPath = Path.Combine(taskPath, "build.bat");
+                StreamWriter batch = File.CreateText(batchPath);
+
+                string compilerArgs = tasks[i].CompilerArgs;
+                compilerArgs += " /I\"includes\"";
+                compilerArgs += " /Fo\"" + Path.Combine("output", Path.GetFileNameWithoutExtension(tasks[i].FilePath)) +".obj\"";
+
+                batch.WriteLine("\"" + Path.GetFileName(tasks[i].Compiler) + "\" " + compilerArgs + " " + tasks[i].FilePath); // Execute task
+
+                // Copy pdb to output if needed
+                if (tasks[i].PDB.Length > 0)
+                {
+                    string srcPdb = tasks[i].PDB;
+                    string dstPdb = Path.Combine("output", Path.GetFileName(tasks[i].PDB));
+                    batch.WriteLine("copy \"" + srcPdb + "\" \"" + dstPdb + "\""); 
+                }
+                
+                batch.Close();
+                //batch.WriteLine("exit");
+            }
+            return true;
+        }
+
+        private bool BuildPCHTasks(Project project)
         {
             string projectPath = Path.GetDirectoryName(project.FullPath);
 
@@ -119,7 +262,18 @@ namespace GolemBuild
 
                 processes[i].StandardInput.WriteLine(projectPath[0] + ":"); // Change drive
                 processes[i].StandardInput.WriteLine("cd " + projectPath); // CD
-                processes[i].StandardInput.WriteLine("\"" + pchTasks[i].Compiler + "\" " + pchTasks[i].CompilerArgs + " /Fp\"" + pchTasks[i].OutputPath + "\" " + pchTasks[i].FilePath); // Execute task
+
+                string compilerArgs = pchTasks[i].CompilerArgs;
+
+                string includeDirString = "";
+                foreach (string includeDir in pchTasks[i].IncludeDirs)
+                {
+                    if (includeDir.Length > 0)
+                        includeDirString += " /I \"" + includeDir + "\"";
+                }
+                compilerArgs += includeDirString;
+
+                processes[i].StandardInput.WriteLine("\"" + pchTasks[i].Compiler + "\" " + compilerArgs + " /Fp\"" + pchTasks[i].OutputPath + "\" " + pchTasks[i].FilePath); // Execute task
                 processes[i].StandardInput.WriteLine("exit");
             }
 
@@ -201,7 +355,18 @@ namespace GolemBuild
 
                 processes[i].StandardInput.WriteLine(projectPath[0] + ":"); // Change drive
                 processes[i].StandardInput.WriteLine("cd " + projectPath); // CD
-                processes[i].StandardInput.WriteLine("\"" + tasks[i].Compiler + "\" " + tasks[i].CompilerArgs + " " + tasks[i].FilePath); // Execute task
+
+                string compilerArgs = tasks[i].CompilerArgs;
+
+                string includeDirString = "";
+                foreach (string includeDir in tasks[i].IncludeDirs)
+                {
+                    if (includeDir.Length > 0)
+                        includeDirString += " /I \"" + includeDir + "\"";
+                }
+                compilerArgs += includeDirString;
+
+                processes[i].StandardInput.WriteLine("\"" + tasks[i].Compiler + "\" " + compilerArgs + " " + tasks[i].FilePath); // Execute task
                 processes[i].StandardInput.WriteLine("exit");
             }
 
@@ -421,7 +586,10 @@ namespace GolemBuild
                         int to = line.LastIndexOf(">");
                         string includeName = line.Substring(from, to - from);
 
-                        if (!includes.Contains(includeName) && !localIncludes.Contains(includeName))
+
+                        bool found = includes.Contains(includeName) || localIncludes.Contains(includeName);
+                        
+                        if (!found)
                         {
                             //WriteLineOutput("Include <" + includeName + "> found in " + fileName);
                             includes.Add(includeName);
@@ -439,15 +607,17 @@ namespace GolemBuild
                         int to = line.LastIndexOf("\"");
                         string includeName = line.Substring(from, to - from);
 
-                        if (!includes.Contains(includeName) && !localIncludes.Contains(includeName))
+                        bool found = includes.Contains(includeName) || localIncludes.Contains(includeName);
+
+                        if (!found)
                         {
-                            //WriteLineOutput("Include \"" + includeName + "\" found in " + fileName);
+                            //WriteLineOutput("Include <" + includeName + "> found in " + fileName);
                             localIncludes.Add(includeName);
                             FindIncludes(project, includeName, includePaths, ref includes, ref localIncludes);
                         }
                         else
                         {
-                            //WriteLineOutput("Ignored \"" + includeName + "\" found in " + fileName);
+                            //WriteLineOutput("Ignored <" + includeName + "> found in " + fileName);
                         }
                     }
                 }
@@ -482,6 +652,16 @@ namespace GolemBuild
             string compilerPath = GetCompilerPath(project);
             string outputPath = "";
 
+            // Figure out include paths
+            List<string> includePaths = new List<string>();
+            string incPath = project.GetProperty("IncludePath").EvaluatedValue;
+            string[] incPaths = incPath.Split(';');
+
+            foreach (string path in incPaths)
+            {
+                includePaths.Add(path.Trim(';'));
+            }
+
             var cItems = project.GetItems("ClCompile");
 
             //list preacompiled headers
@@ -496,22 +676,21 @@ namespace GolemBuild
                     }
                     if (item.DirectMetadata.Where(dmd => dmd.Name == "PrecompiledHeader" && dmd.EvaluatedValue == "Create").Any())
                     {
+                        List<string> includes = new List<string>();
+                        List<string> localIncludes = new List<string>();
+
+                        FindIncludes(project, item.EvaluatedInclude, includePaths, ref includes, ref localIncludes);
+
+                        OnMessage.Invoke(">> " + item.EvaluatedInclude);
+                        OnMessage.Invoke("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
+                        OnMessage.Invoke("   Found " + localIncludes.Count + " includes: " + PrintIncludes(localIncludes));
+
                         var CLtask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                         CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
                         string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ObjectFileName", "AssemblerListingLocation" }, item.Metadata);//FS or MP?
-                        pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", item.GetMetadataValue("PrecompiledHeaderOutputFile")));
+                        pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", item.GetMetadataValue("ProgramDataBaseFileName"), item.GetMetadataValue("PrecompiledHeaderOutputFile"), includePaths, includes, localIncludes));
                     }
                 }
-            }
-
-            // Figure out include paths
-            List<string> includePaths = new List<string>();
-            string incPath = project.GetProperty("IncludePath").EvaluatedValue;
-            string[] incPaths = incPath.Split(';');
-            
-            foreach(string path in incPaths)
-            {
-                includePaths.Add(path.Trim(';'));
             }
 
             //list files to compile
@@ -556,16 +735,8 @@ namespace GolemBuild
 
                 args += " /Fd\"GolemBuild\\" + Path.GetFileNameWithoutExtension(item.EvaluatedInclude) + "\"";*/ // Use this for having one pdb per object file, this has issues with pch
                 
-                string includePathString = "";
-                foreach(string includePath in includePaths)
-                {
-                    if (includePath.Length > 0)
-                        includePathString += " /I \"" + includePath + "\"";
-                }
-                args += includePathString;
-
                 //TODO: guess which pch is going to be used (there can be probably only one)
-                tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", item.GetMetadataValue("PrecompiledHeaderOutputFile")));
+                tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, item.GetMetadataValue("PrecompiledHeaderOutputFile"), item.GetMetadataValue("ProgramDataBaseFileName"), "", includePaths, includes, localIncludes));
             }
 
             return;
