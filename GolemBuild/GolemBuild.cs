@@ -65,6 +65,8 @@ namespace GolemBuild
                 evaluatedProjects.Add(newProj);*/
                 CreateCompilationTasks(project);
 
+                CallPreBuildEvents(project);
+
                 if (pchTasks.Count > 0)
                 {
                     OnMessage.Invoke("Compiling Precompiled Headers...");
@@ -103,6 +105,8 @@ namespace GolemBuild
                     }
                 }
 
+                CallPreLinkEvents(project);
+
                 OnMessage.Invoke("Linking...");
                 string outputFile;
                 if (!LinkProject(project, out outputFile))
@@ -113,6 +117,8 @@ namespace GolemBuild
 
                 OnMessage.Invoke("-> " + outputFile);
                 OnMessage.Invoke("- Compilation successful -");
+
+                CallPostBuildEvents(project);
 
                 return true;
             }
@@ -877,7 +883,7 @@ namespace GolemBuild
                 else
                     args += " /TP";
 
-                args += " /FS"; // Force synchronous PDB writes // If we ever want one single pdb file per distributed node, this is how to do it
+                //args += " /FS"; // Force synchronous PDB writes // If we ever want one single pdb file per distributed node, this is how to do it
 
                 /*string buildPath = Path.Combine(Path.GetDirectoryName(project.FullPath), "GolemBuild");
                 if (!Directory.Exists(buildPath))
@@ -898,6 +904,168 @@ namespace GolemBuild
             }
 
             return;
+        }
+
+        private bool CallPreBuildEvents(Project project)
+        {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
+            var buildEvents = project.GetItems("PreBuildEvent");
+
+            foreach(var buildEvent in buildEvents)
+            {
+                string command = buildEvent.GetMetadataValue("Command");
+                if (command.Length == 0)
+                    continue;
+
+                Process eventProcess = new Process();
+
+                eventProcess.StartInfo.FileName = "cmd.exe";
+                eventProcess.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                eventProcess.StartInfo.UseShellExecute = false;
+                eventProcess.StartInfo.RedirectStandardInput = true;
+                eventProcess.StartInfo.RedirectStandardOutput = true;
+                eventProcess.StartInfo.RedirectStandardError = true;
+                eventProcess.StartInfo.CreateNoWindow = true;
+
+                eventProcess.Start();
+                StreamReader eventOutput = eventProcess.StandardOutput;
+
+                eventProcess.StandardInput.WriteLine("@echo off"); // Echo off
+                eventProcess.StandardInput.WriteLine(projectPath[0] + ":"); // Drive
+                eventProcess.StandardInput.WriteLine("cd \"" + projectPath + "\""); // CD
+                eventProcess.StandardInput.WriteLine("Command:");
+                eventProcess.StandardInput.WriteLine(command); // Call event
+                eventProcess.StandardInput.WriteLine("exit"); // Exit
+
+                eventProcess.WaitForExit();
+
+                // Print results of command
+                bool startCommand = false;
+                while (eventOutput.Peek() >= 0)
+                {
+                    string line = eventOutput.ReadLine();
+                    if (line.EndsWith("Command:"))
+                    {
+                        startCommand = true;
+                        continue;
+                    }
+
+                    if (startCommand && line != "exit")
+                    {
+                        OnMessage.Invoke(line);
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private bool CallPreLinkEvents(Project project)
+        {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
+            var buildEvents = project.GetItems("PreLinkEvent");
+
+            foreach (var buildEvent in buildEvents)
+            {
+                string command = buildEvent.GetMetadataValue("Command");
+                if (command.Length == 0)
+                    continue;
+
+                Process eventProcess = new Process();
+
+                eventProcess.StartInfo.FileName = "cmd.exe";
+                eventProcess.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                eventProcess.StartInfo.UseShellExecute = false;
+                eventProcess.StartInfo.RedirectStandardInput = true;
+                eventProcess.StartInfo.RedirectStandardOutput = true;
+                eventProcess.StartInfo.RedirectStandardError = true;
+                eventProcess.StartInfo.CreateNoWindow = true;
+
+                eventProcess.Start();
+                StreamReader eventOutput = eventProcess.StandardOutput;
+
+                eventProcess.StandardInput.WriteLine("@echo off"); // Echo off
+                eventProcess.StandardInput.WriteLine(projectPath[0] + ":"); // Drive
+                eventProcess.StandardInput.WriteLine("cd \"" + projectPath + "\""); // CD
+                eventProcess.StandardInput.WriteLine("Command:");
+                eventProcess.StandardInput.WriteLine(command); // Call event
+                eventProcess.StandardInput.WriteLine("exit"); // Exit
+
+                eventProcess.WaitForExit();
+
+                // Print results of command
+                bool startCommand = false;
+                while (eventOutput.Peek() >= 0)
+                {
+                    string line = eventOutput.ReadLine();
+                    if (line.EndsWith("Command:"))
+                    {
+                        startCommand = true;
+                        continue;
+                    }
+
+                    if (startCommand && line != "exit")
+                    {
+                        OnMessage.Invoke(line);
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        private bool CallPostBuildEvents(Project project)
+        {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
+            var buildEvents = project.GetItems("PostBuildEvent");
+
+            foreach (var buildEvent in buildEvents)
+            {
+                string command = buildEvent.GetMetadataValue("Command");
+                if (command.Length == 0)
+                    continue;
+
+                Process eventProcess = new Process();
+
+                eventProcess.StartInfo.FileName = "cmd.exe";
+                eventProcess.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                eventProcess.StartInfo.UseShellExecute = false;
+                eventProcess.StartInfo.RedirectStandardInput = true;
+                eventProcess.StartInfo.RedirectStandardOutput = true;
+                eventProcess.StartInfo.RedirectStandardError = true;
+                eventProcess.StartInfo.CreateNoWindow = true;
+
+                eventProcess.Start();
+                StreamReader eventOutput = eventProcess.StandardOutput;
+
+                eventProcess.StandardInput.WriteLine("@echo off"); // Echo off
+                eventProcess.StandardInput.WriteLine(projectPath[0] + ":"); // Drive
+                eventProcess.StandardInput.WriteLine("cd \"" + projectPath + "\""); // CD
+                eventProcess.StandardInput.WriteLine("Command:");
+                eventProcess.StandardInput.WriteLine(command); // Call event
+                eventProcess.StandardInput.WriteLine("exit"); // Exit
+
+                eventProcess.WaitForExit();
+
+                // Print results of command
+                bool startCommand = false;
+                while (eventOutput.Peek() >= 0)
+                {
+                    string line = eventOutput.ReadLine();
+                    if (line.EndsWith("Command:"))
+                    {
+                        startCommand = true;
+                        continue;
+                    }
+
+                    if (startCommand && line != "exit")
+                    {
+                        OnMessage.Invoke(line);
+                    }
+                }
+            }
+
+            return true;
         }
 
         private string GetCompilerPath(Project project)
