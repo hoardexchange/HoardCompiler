@@ -13,6 +13,8 @@ namespace GolemBuild
 {
     public class GolemBuild
     {
+        const bool runDistributed = true; // TODO: Figure out if we are attached to a broker or not
+
         public event Action<string> OnError;
         public event Action<string> OnMessage;
         public event Action OnClear;
@@ -29,6 +31,7 @@ namespace GolemBuild
 
             string projectPath = Path.GetDirectoryName(project.FullPath);
             string golemBuildPath = Path.Combine(projectPath, "GolemBuild");
+            Directory.CreateDirectory(golemBuildPath);
 
             // Clear GolemBuild directory
             System.IO.DirectoryInfo di = new DirectoryInfo(golemBuildPath);
@@ -63,7 +66,7 @@ namespace GolemBuild
                 }
                 //Console.WriteLine("Adding " + Path.GetFileNameWithoutExtension(proj.FullPath));
                 evaluatedProjects.Add(newProj);*/
-                CreateCompilationTasks(project);
+                CreateCompilationTasks(project, platform);
 
                 CallPreBuildEvents(project);
 
@@ -76,8 +79,6 @@ namespace GolemBuild
                         return false;
                     }
                 }
-
-                const bool runDistributed = true; // TODO: Figure out if we are attached to a broker or not
 
                 if (runDistributed)
                 {
@@ -109,7 +110,7 @@ namespace GolemBuild
 
                 OnMessage.Invoke("Linking...");
                 string outputFile;
-                if (!LinkProject(project, out outputFile))
+                if (!LinkProject(project, platform, out outputFile))
                 {
                     OnMessage.Invoke("- Linking failed -");
                     return false;
@@ -135,17 +136,41 @@ namespace GolemBuild
 
             Directory.CreateDirectory(golemBuildPath);
 
+            // Kill mspdbsrv.exe, this has to be done because it sometimes stays open and doesn't shut down
+            // This bug has been known to Microsoft since at least 2005, but they don't seem to want to fix the actual issue
+            // Instead the recommend force terminating it, and even built in some force terminating in msbuild and visual studio
+            foreach (Process proc in Process.GetProcessesByName("mspdbsrv"))
+            {
+                proc.Kill();
+                proc.WaitForExit();
+            }
+
             // Clear GolemBuildTasks directory
             System.IO.DirectoryInfo di = new DirectoryInfo(golemBuildPath);
 
             foreach (FileInfo file in di.GetFiles())
             {
-                file.Delete();
+                try
+                {
+                    file.Delete();
+                }
+                catch(Exception e)
+                {
+
+                }
             }
             foreach (DirectoryInfo dir in di.GetDirectories())
             {
-                dir.Delete(true);
+                try
+                {
+                    dir.Delete(true);
+                }
+                catch (Exception e)
+                {
+
+                }
             }
+            
 
             // Package tasks
             for (int i = 0; i < tasks.Count; i++)
@@ -159,7 +184,9 @@ namespace GolemBuild
                 {
                     if (Path.GetExtension(file) == ".exe" || Path.GetExtension(file) == ".dll")
                     {
-                        File.Copy(file, Path.Combine(taskPath, Path.GetFileName(file)));
+                        string dstFile = Path.Combine(taskPath, Path.GetFileName(file));
+                        if (!File.Exists(dstFile))
+                            File.Copy(file, dstFile);
                     }
                 }
 
@@ -186,12 +213,29 @@ namespace GolemBuild
                 }
 
                 // Package pdb and idb if used
-                if (tasks[i].PDB.Length > 0)
+                string pdbArg = "";
+                bool usedPdb = false;
+                if (tasks[i].PDB.Length > 0 )
                 {
-                    string dstPdbPath = Path.Combine(taskPath, tasks[i].PDB);
-                    Directory.CreateDirectory(Path.GetDirectoryName(dstPdbPath));
-                    File.Copy(Path.Combine(projectPath, tasks[i].PDB), dstPdbPath); // PDB
-                    File.Copy(Path.Combine(projectPath, Path.ChangeExtension(tasks[i].PDB, ".idb")), Path.ChangeExtension(dstPdbPath, ".idb")); // IDB
+                    string srcPdbPath = Path.Combine(projectPath, tasks[i].PDB);
+                    if (File.Exists(srcPdbPath))
+                    {
+                        string dstPdbPath = Path.Combine(taskPath, tasks[i].PDB);
+                        Directory.CreateDirectory(Path.GetDirectoryName(dstPdbPath));
+                        File.Copy(Path.Combine(projectPath, tasks[i].PDB), dstPdbPath); // PDB
+                        File.Copy(Path.Combine(projectPath, Path.ChangeExtension(tasks[i].PDB, ".idb")), Path.ChangeExtension(dstPdbPath, ".idb")); // IDB
+                        pdbArg = " /Fd\"" + tasks[i].PDB + "\"";
+                        usedPdb = true;
+                    }
+                    else // Create a placeholder file because /Fd doesn't create one...
+                    {
+                        //pdbArg = " /Fd\"" + Path.GetDirectoryName(tasks[i].PDB) + "\"";
+                        //pdbArg = " /Fd\"output\\\"";
+                        //string dstPdbPath = Path.Combine(taskPath, tasks[i].PDB);
+                        //Directory.CreateDirectory(Path.GetDirectoryName(dstPdbPath));
+                        //FileStream newPdFile = File.Create(dstPdbPath);
+                        //newPdFile.Close();
+                    }
                 }
 
                 // Package sourcefile
@@ -272,8 +316,16 @@ namespace GolemBuild
                 StreamWriter batch = File.CreateText(batchPath);
 
                 string compilerArgs = tasks[i].CompilerArgs;
-                compilerArgs += " /I\"includes\"";
+                compilerArgs += " /I\"includes\" /FS";
                 compilerArgs += " /Fo\"" + Path.Combine("output", Path.GetFileNameWithoutExtension(tasks[i].FilePath)) +".obj\"";
+                if (!usedPdb)
+                {
+                    compilerArgs += " /Fd\"" + Path.Combine("output", Path.ChangeExtension(tasks[i].FilePath, ".pdb")) + "\"";
+                }
+                else
+                {
+                    compilerArgs += pdbArg;
+                }
 
                 batch.WriteLine("\"" + Path.GetFileName(tasks[i].Compiler) + "\" " + compilerArgs + " " + tasks[i].FilePath); // Execute task
 
@@ -282,6 +334,9 @@ namespace GolemBuild
                 {
                     string srcPdb = tasks[i].PDB;
                     string dstPdb = Path.Combine("output", Path.ChangeExtension(Path.GetFileName(tasks[i].FilePath), ".pdb"));
+
+                    Directory.CreateDirectory(Path.Combine(taskPath, Path.GetDirectoryName(srcPdb)));
+
                     batch.WriteLine("copy \"" + srcPdb + "\" \"" + dstPdb + "\""); 
                 }
                 
@@ -295,12 +350,12 @@ namespace GolemBuild
         {
             string projectPath = Path.GetDirectoryName(project.FullPath);
             string golemBuildPath = Path.Combine(projectPath, "GolemBuild");
-            Directory.CreateDirectory(golemBuildPath);
 
             string golemBuildTasksPath = Path.Combine(projectPath, "GolemBuildTasks");
 
             Process[] processes = new Process[tasks.Count];
             StreamReader[] outputs = new StreamReader[tasks.Count];
+            StreamReader[] errorOutputs = new StreamReader[tasks.Count];
             bool[] hasFinished = new bool[tasks.Count];
 
             // Start building packaged tasks
@@ -320,6 +375,7 @@ namespace GolemBuild
 
                 processes[i].Start();
                 outputs[i] = processes[i].StandardOutput;
+                errorOutputs[i] = processes[i].StandardError;
 
                 processes[i].StandardInput.WriteLine(taskPath[0] + ":"); // Change drive
                 processes[i].StandardInput.WriteLine("cd \"" + taskPath + "\""); // CD
@@ -351,6 +407,14 @@ namespace GolemBuild
                                     error = true;
                                     compilationSucceeded = false;
                                 }
+                            }
+
+                            while (errorOutputs[i].Peek() >= 0)
+                            {
+                                string output = errorOutputs[i].ReadLine();
+                                OnMessage.Invoke("[ERROR] " + tasks[i].FilePath + ": " + output);
+                                error = true;
+                                compilationSucceeded = false;
                             }
 
                             if (!error)
@@ -427,6 +491,7 @@ namespace GolemBuild
                 }
                 compilerArgs += includeDirString;
 
+                Directory.CreateDirectory(Path.Combine(projectPath, Path.GetDirectoryName(pchTasks[i].OutputPath)));
                 compilerArgs += " /Fp\"" + pchTasks[i].OutputPath + "\" ";
                 compilerArgs += " /Fo\"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(pchTasks[i].FilePath, ".obj")) + "\" ";
 
@@ -575,7 +640,7 @@ namespace GolemBuild
             return compilationSucceeded;
         }
 
-        bool LinkProject(Project project, out string outputFile)
+        bool LinkProject(Project project, string platform, out string outputFile)
         {
             string projectPath = Path.GetDirectoryName(project.FullPath);
 
@@ -601,7 +666,7 @@ namespace GolemBuild
                 linkTask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.LIB"));
                 linkerOptions = GenerateTaskCommandLine(linkTask, new string[] { "OutputFile" }, libDefinitions.Metadata);
                 outputFile = libDefinitions.GetMetadataValue("OutputFile").Replace('\\', '/');
-                linkerPath = GetLibPath(project);
+                linkerPath = GetLibPath(project, platform);
             }
             else // Exe or DLL
             {
@@ -609,8 +674,10 @@ namespace GolemBuild
                 linkTask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.Link"));
                 linkerOptions = GenerateTaskCommandLine(linkTask, new string[] { "OutputFile", "ProfileGuidedDatabase" }, linkDefinitions.Metadata);
                 outputFile = linkDefinitions.GetMetadataValue("OutputFile").Replace('\\', '/');
-                linkerPath = GetLinkerPath(project);
+                linkerPath = GetLinkerPath(project, platform);
             }
+
+            Directory.CreateDirectory(Path.Combine(projectPath, Path.GetDirectoryName(outputFile)));
 
             Process linkerProcess = new Process();
 
@@ -624,7 +691,7 @@ namespace GolemBuild
 
             linkerProcess.Start();
             StreamReader linkOutput = linkerProcess.StandardOutput;
-            linkerProcess.StandardInput.WriteLine("\"" + GetDevCmdPath(project) + "\"");
+            linkerProcess.StandardInput.WriteLine("\"" + GetDevCmdPath(project, platform) + "\"");
 
             string linkCommand = "\"" + linkerPath + "\" " + linkerOptions + " /OUT:\"" + outputFile + "\"";
 
@@ -640,11 +707,18 @@ namespace GolemBuild
                 linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(task.FilePath, ".obj")) + "\"";
             }
 
+            OnMessage?.Invoke(string.Format("Linking Task: {0}", linkCommand));
+
             linkerProcess.StandardInput.WriteLine(linkCommand); // Execute task
             linkerProcess.StandardInput.WriteLine("exit");
-            linkerProcess.WaitForExit();
+            bool exited = linkerProcess.WaitForExit(30000);
 
-            bool linkSuccessful = true;
+            if (!exited)
+            {
+                OnMessage.Invoke("[LINK ERROR]: Linker timed out after 30 seconds");
+            }
+
+            bool linkSuccessful = exited;
             while (linkOutput.Peek() >= 0)
             {
                 string output = linkOutput.ReadLine();
@@ -795,7 +869,7 @@ namespace GolemBuild
             return str;
         }
 
-        private void CreateCompilationTasks(Project project)
+        private void CreateCompilationTasks(Project project, string platform)
         {
             string projectPath = Path.GetDirectoryName(project.FullPath);
             //in VS2017 this semms to be the proper one
@@ -808,7 +882,7 @@ namespace GolemBuild
             string BuildDllPath = VCTargetsPath + (VCTargetsPath.Contains("v110") ? "Microsoft.Build.CPPTasks.Common.v110.dll" : "Microsoft.Build.CPPTasks.Common.dll");
             Assembly CPPTasksAssembly = Assembly.LoadFrom(BuildDllPath);
 
-            string compilerPath = GetCompilerPath(project);
+            string compilerPath = GetCompilerPath(project, platform);
 
             // Figure out include paths
             List<string> includePaths = new List<string>();
@@ -877,14 +951,28 @@ namespace GolemBuild
 
                 var Task = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                 Task.GetType().GetProperty("Sources").SetValue(Task, new TaskItem[] { new TaskItem() });
-                string args = GenerateTaskCommandLine(Task, new string[] { "ObjectFileName", "AssemblerListingLocation" }, item.Metadata);//FS or MP?
+
+                string args = "";
+
+                if (runDistributed)
+                {
+                    args = GenerateTaskCommandLine(Task, new string[] { "ObjectFileName", "AssemblerListingLocation", "ProgramDataBaseFileName" }, item.Metadata);//FS or MP?
+                }
+                else
+                {
+                    args = GenerateTaskCommandLine(Task, new string[] { "ObjectFileName", "AssemblerListingLocation" }, item.Metadata);//FS or MP?
+                }
+
                 if (Path.GetExtension(item.EvaluatedInclude) == ".c")
                     args += " /TC";
                 else
                     args += " /TP";
 
-                //args += " /FS"; // Force synchronous PDB writes // If we ever want one single pdb file per distributed node, this is how to do it
-
+                if (!runDistributed)
+                {
+                    args += " /FS"; // Force synchronous PDB writes // If we ever want one single pdb file per distributed node, this is how to do it
+                }
+                    
                 /*string buildPath = Path.Combine(Path.GetDirectoryName(project.FullPath), "GolemBuild");
                 if (!Directory.Exists(buildPath))
                 {
@@ -899,8 +987,9 @@ namespace GolemBuild
                 {
                     pch = item.GetMetadataValue("PrecompiledHeaderOutputFile");
                 }
+                string pdb = item.GetMetadataValue("ProgramDataBaseFileName");
 
-                tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, pch, item.GetMetadataValue("ProgramDataBaseFileName"), "", includePaths, includes, localIncludes));
+                tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, pch, pdb, "", includePaths, includes, localIncludes));
             }
 
             return;
@@ -1068,7 +1157,7 @@ namespace GolemBuild
             return true;
         }
 
-        private string GetCompilerPath(Project project)
+        private string GetCompilerPath(Project project, string platform)
         {
             var PlatformToolsetVersion = project.GetProperty("PlatformToolsetVersion").EvaluatedValue;
 
@@ -1084,33 +1173,136 @@ namespace GolemBuild
             var incPath = project.GetProperty("IncludePath").EvaluatedValue;
             var libPath = project.GetProperty("LibraryPath").EvaluatedValue;
             var refPath = project.GetProperty("ReferencePath").EvaluatedValue;
-            var path = project.GetProperty("Path").EvaluatedValue;
             var temp = project.GetProperty("Temp").EvaluatedValue;
             var sysRoot = project.GetProperty("SystemRoot").EvaluatedValue;
 
             //name depends on comilation platform and source platform
-            string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x86").EvaluatedValue, "cl.exe");
+
+            string clPath = "";
+            if (platform == "x64")
+            {
+                clPath = project.GetProperty("VC_ExecutablePath_x64_x64").EvaluatedValue;
+            }
+            else
+            {
+                clPath = project.GetProperty("VC_ExecutablePath_x86_x86").EvaluatedValue;
+            }
+            
+            if (clPath.Contains(";"))
+            {
+                bool foundCl = false;
+                string[] clPaths = clPath.Split(';');
+                foreach(string path in clPaths)
+                {
+                    if (File.Exists(Path.Combine(path, "cl.exe")))
+                    {
+                        clPath = path;
+                        foundCl = true;
+                        break;
+                    }
+                }
+
+                if (!foundCl)
+                {
+                    OnMessage.Invoke("Could not find CL.exe!");
+                }
+            }
+
+            clPath = Path.Combine(clPath, "cl.exe");
+
             return clPath;
         }
 
-        private string GetLinkerPath(Project project)
+        private string GetLinkerPath(Project project, string platform)
         {
-            //name depends on comilation platform and source platform
-            string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x86").EvaluatedValue, "link.exe");
-            return clPath;
+            string linkPath = "";
+            if (platform == "x64")
+            {
+                linkPath = project.GetProperty("VC_ExecutablePath_x64_x64").EvaluatedValue;
+            }
+            else
+            {
+                linkPath = project.GetProperty("VC_ExecutablePath_x86_x86").EvaluatedValue;
+            }
+
+            if (linkPath.Contains(";"))
+            {
+                bool foundLink = false;
+                string[] linkPaths = linkPath.Split(';');
+                foreach (string path in linkPaths)
+                {
+                    if (File.Exists(Path.Combine(path, "link.exe")))
+                    {
+                        linkPath = path;
+                        foundLink = true;
+                        break;
+                    }
+                }
+
+                if (!foundLink)
+                {
+                    OnMessage.Invoke("Could not find Link.exe!");
+                }
+            }
+
+            linkPath = Path.Combine(linkPath, "link.exe");
+
+            return linkPath;
         }
 
-        private string GetLibPath(Project project)
+        private string GetLibPath(Project project, string platform)
         {
-            //name depends on comilation platform and source platform
-            string clPath = Path.Combine(project.GetProperty("VC_ExecutablePath_x86").EvaluatedValue, "lib.exe");
-            return clPath;
+            string libPath = "";
+            if (platform == "x64")
+            {
+                libPath = project.GetProperty("VC_ExecutablePath_x64_x64").EvaluatedValue;
+            }
+            else
+            {
+                libPath = project.GetProperty("VC_ExecutablePath_x86_x86").EvaluatedValue;
+            }
+
+            if (libPath.Contains(";"))
+            {
+                bool foundLib = false;
+                string[] libPaths = libPath.Split(';');
+                foreach (string path in libPaths)
+                {
+                    if (File.Exists(Path.Combine(path, "lib.exe")))
+                    {
+                        libPath = path;
+                        foundLib = true;
+                        break;
+                    }
+                }
+
+                if (!foundLib)
+                {
+                    OnMessage.Invoke("Could not find lib.exe!");
+                }
+            }
+
+            libPath = Path.Combine(libPath, "lib.exe");
+
+            return libPath;
         }
 
-        private string GetDevCmdPath(Project project)
+        private string GetDevCmdPath(Project project, string platform)
         {
-            var vsDir = project.GetProperty("VSInstallDir").EvaluatedValue;
-            return Path.Combine(vsDir, "Common7", "Tools", "VsDevCmd.bat");
+            string vsDir = "";
+            if (platform == "x64")
+            {
+                vsDir = project.GetProperty("VsInstallRoot").EvaluatedValue;
+                vsDir = Path.Combine(vsDir, "VC", "Auxiliary", "Build", "vcvars64.bat");
+            }
+            else
+            {
+                vsDir = project.GetProperty("VSInstallDir").EvaluatedValue;
+                vsDir = Path.Combine(vsDir, "Common7", "Tools", "VsDevCmd.bat");
+            }
+
+            
+            return vsDir;
         }
 
         public string GetProjectInformation(string projectFile)
