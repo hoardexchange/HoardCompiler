@@ -154,7 +154,7 @@ namespace GolemBuild
                 {
                     file.Delete();
                 }
-                catch(Exception e)
+                catch(Exception)
                 {
 
                 }
@@ -165,7 +165,7 @@ namespace GolemBuild
                 {
                     dir.Delete(true);
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
 
                 }
@@ -223,7 +223,10 @@ namespace GolemBuild
                         string dstPdbPath = Path.Combine(taskPath, tasks[i].PDB);
                         Directory.CreateDirectory(Path.GetDirectoryName(dstPdbPath));
                         File.Copy(Path.Combine(projectPath, tasks[i].PDB), dstPdbPath); // PDB
-                        File.Copy(Path.Combine(projectPath, Path.ChangeExtension(tasks[i].PDB, ".idb")), Path.ChangeExtension(dstPdbPath, ".idb")); // IDB
+
+                        string srcIdbPath = Path.Combine(projectPath, Path.ChangeExtension(tasks[i].PDB, ".idb"));
+                        if (File.Exists(srcIdbPath))
+                            File.Copy(srcIdbPath, Path.ChangeExtension(dstPdbPath, ".idb")); // IDB
                         pdbArg = " /Fd\"" + tasks[i].PDB + "\"";
                         usedPdb = true;
                     }
@@ -239,7 +242,15 @@ namespace GolemBuild
                 }
 
                 // Package sourcefile
-                File.Copy(Path.Combine(projectPath, tasks[i].FilePath), Path.Combine(taskPath, tasks[i].FilePath));
+                string source = tasks[i].FilePath;
+                string destination = Path.Combine(taskPath, Path.GetFileName(tasks[i].FilePath));
+
+                if (!Path.IsPathRooted(tasks[i].FilePath))
+                {
+                    source = Path.Combine(projectPath, tasks[i].FilePath);
+                }
+
+                File.Copy(source, destination);
 
                 // Package includes
                 string dstIncludePath = Path.Combine(taskPath, "includes");
@@ -698,13 +709,13 @@ namespace GolemBuild
             //all pch files
             foreach (var task in pchTasks)
             {
-                linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(task.FilePath, ".obj")) + "\"";
+                linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(Path.GetFileName(task.FilePath), ".obj")) + "\"";
             }
 
             //all compiled obj files
             foreach (var task in tasks)
             {
-                linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(task.FilePath, ".obj")) + "\"";
+                linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(Path.GetFileName(task.FilePath), ".obj")) + "\"";
             }
 
             OnMessage?.Invoke(string.Format("Linking Task: {0}", linkCommand));
@@ -732,11 +743,49 @@ namespace GolemBuild
             return linkSuccessful;
         }
 
-        private void FindIncludes(Project project, string fileName, List<string> includePaths, ref List<string> includes, ref List<string> localIncludes)
+        bool FindCommonPath(string path, string path2, out string common)
+        {
+            common = "";
+
+            string[] string2Tokenized = path2.Split('\\');
+
+            for(int i = string2Tokenized.Length-1; i >= 0; i--)
+            {
+                string subStringToTest = "";
+                for(int j = 0; j < i; j++)
+                {
+                    subStringToTest = Path.Combine(subStringToTest, string2Tokenized[j]);
+                }
+
+                if (path.Contains(subStringToTest))
+                {
+                    int subStringPos = path.LastIndexOf(subStringToTest);
+                    common = path.Substring(0, subStringPos);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void FindIncludes(Project project, string fileName, string previousFileName, List<string> includePaths, ref List<string> includes, ref List<string> localIncludes)
         {
             //WriteLineOutput("Scanning: " + fileName);
-
             string path = Path.Combine(Path.GetDirectoryName(project.FullPath), fileName);
+            if (previousFileName != "")
+            {
+                if (!Path.IsPathRooted(fileName) && Path.IsPathRooted(previousFileName))
+                {
+                    string fixedFileName = fileName.Replace('/', '\\');
+
+                    string commonPath;
+                    if (FindCommonPath(previousFileName, fixedFileName, out commonPath))
+                    {
+                        path = Path.Combine(commonPath, fixedFileName);
+                    }
+                }
+            }
+
             if (!File.Exists(path))
             {
                 bool foundFile = false;
@@ -753,7 +802,10 @@ namespace GolemBuild
 
                 if (!foundFile)
                 {
-                    OnMessage.Invoke("Could not find include: " + fileName);
+                    if (!localIncludes.Contains(fileName))
+                    {
+                        OnMessage.Invoke("Could not find include: " + fileName);
+                    }
                     return;
                 }
             }
@@ -825,7 +877,7 @@ namespace GolemBuild
                         {
                             //WriteLineOutput("Include <" + includeName + "> found in " + fileName);
                             includes.Add(includeName);
-                            FindIncludes(project, includeName, includePaths, ref includes, ref localIncludes);
+                            FindIncludes(project, includeName, fileName, includePaths, ref includes, ref localIncludes);
                         }
                         else
                         {
@@ -845,7 +897,7 @@ namespace GolemBuild
                         {
                             //WriteLineOutput("Include <" + includeName + "> found in " + fileName);
                             localIncludes.Add(includeName);
-                            FindIncludes(project, includeName, includePaths, ref includes, ref localIncludes);
+                            FindIncludes(project, includeName, fileName, includePaths, ref includes, ref localIncludes);
                         }
                         else
                         {
@@ -886,19 +938,34 @@ namespace GolemBuild
 
             // Figure out include paths
             List<string> includePaths = new List<string>();
-            string incPath = project.GetProperty("IncludePath").EvaluatedValue;
-            string[] incPaths = incPath.Split(';');
-
-            foreach (string path in incPaths)
             {
-                includePaths.Add(path.Trim(';'));
+                string incPath = project.GetProperty("IncludePath").EvaluatedValue;
+                string[] incPaths = incPath.Split(';');
+
+                foreach (string path in incPaths)
+                {
+                    if (path.Length > 0 && !includePaths.Contains(path))
+                        includePaths.Add(path.Trim(';'));
+                }
             }
 
             var cItems = project.GetItems("ClCompile");
 
-            //list preacompiled headers
+            //list precompiled headers
             foreach (var item in cItems)
             {
+                if (item.DirectMetadata.Where(dmd => dmd.Name == "AdditionalIncludeDirectories").Any())
+                {
+                    string incPath = item.GetMetadata("AdditionalIncludeDirectories").EvaluatedValue;
+                    string[] incPaths = incPath.Split(';');
+
+                    foreach (string path in incPaths)
+                    {
+                        if (path.Length > 0 && !includePaths.Contains(path))
+                            includePaths.Add(path.Trim(';'));
+                    }
+                }
+
                 if (item.DirectMetadata.Any())
                 {
                     if (item.DirectMetadata.Where(dmd => dmd.Name == "ExcludedFromBuild" && dmd.EvaluatedValue == "true").Any())
@@ -911,7 +978,7 @@ namespace GolemBuild
                         List<string> includes = new List<string>();
                         List<string> localIncludes = new List<string>();
 
-                        FindIncludes(project, item.EvaluatedInclude, includePaths, ref includes, ref localIncludes);
+                        FindIncludes(project, item.EvaluatedInclude, "", includePaths, ref includes, ref localIncludes);
 
                         OnMessage.Invoke(">> " + item.EvaluatedInclude);
                         OnMessage.Invoke("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
@@ -929,6 +996,18 @@ namespace GolemBuild
             //list files to compile
             foreach (var item in cItems)
             {
+                if (item.HasMetadata("AdditionalIncludeDirectories"))
+                {
+                    string incPath = item.GetMetadata("AdditionalIncludeDirectories").EvaluatedValue;
+                    string[] incPaths = incPath.Split(';');
+
+                    foreach (string path in incPaths)
+                    {
+                        if (path.Length > 0 && !includePaths.Contains(path))
+                            includePaths.Add(path.Trim(';'));
+                    }
+                }
+
                 List<string> includes = new List<string>();
                 List<string> localIncludes = new List<string>();
 
@@ -943,7 +1022,7 @@ namespace GolemBuild
                         ExcludePrecompiledHeader = true;
                 }
 
-                FindIncludes(project, item.EvaluatedInclude, includePaths, ref includes, ref localIncludes);
+                FindIncludes(project, item.EvaluatedInclude, "", includePaths, ref includes, ref localIncludes);
 
                 OnMessage.Invoke(">> " + item.EvaluatedInclude);
                 OnMessage.Invoke("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
