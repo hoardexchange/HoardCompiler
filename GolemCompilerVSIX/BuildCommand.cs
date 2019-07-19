@@ -102,6 +102,7 @@ namespace GolemCompilerVSIX
         {            
             List<VCProject> projects = new List<VCProject>();
 
+            package.OutputPane.Activate();
             package.Dte.ExecuteCommand("File.SaveAll");
 
             foreach (var item in package.Dte.SelectedItems)
@@ -177,41 +178,67 @@ namespace GolemCompilerVSIX
         /// <param name="projects"></param>
         private void RequestBuildProjects(List<VCProject> projects)
         {
-            Solution sln = package.Dte.Solution;
-            var sc = sln.SolutionBuild.ActiveConfiguration as EnvDTE80.SolutionConfiguration2;
+            var task = ThreadHelper.JoinableTaskFactory.StartOnIdle(
+                async () =>
+                {
+                    await System.Threading.Tasks.Task.Run(() =>
+                    {
+                        Solution sln = package.Dte.Solution;
+                        var sc = sln.SolutionBuild.ActiveConfiguration as EnvDTE80.SolutionConfiguration2;
 
-            GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
+                        package.OutputPane.Clear();
 
-            builder.OnMessage += (str) =>
-            {
-                package.OutputPane.OutputString(str+"\n");
-            };
+                        GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
 
-            builder.OnClear += () =>
-            {
-                package.OutputPane.Clear();
-            };
+                        builder.OnMessage += (str) =>
+                        {
+                            package.OutputPane.OutputString(str + "\n");
+                        };
 
-            foreach (VCProject p in projects)
-            {
-                builder.BuildProject(p.ProjectFile, sc.Name, sc.PlatformName);
-            }
+                        builder.OnClear += () =>
+                        {
+                            package.OutputPane.Clear();
+                        };
 
-            string message = string.Format(CultureInfo.CurrentCulture, "Found {0} projects to build", projects.Count);
-            foreach(VCProject p in projects)
-            {
-                message += "\nPROJECT:" + p.ProjectFile;
-                message += builder.GetProjectInformation(p.ProjectFile);
-            }
-            string title = "BuildCommand";
+                        int projectsSucceeded = 0;
+                        int projectsFailed = 0;
+
+                        bool first = true;
+                        foreach (VCProject p in projects)
+                        {
+                            if (first)
+                                first = false;
+                            else
+                                builder.ClearTasks();
+
+                            bool succeeded = builder.BuildProject(p.ProjectFile, sc.Name, sc.PlatformName);
+                            if (succeeded)
+                                projectsSucceeded++;
+                            else
+                                projectsFailed++;
+                        }
+
+                        package.OutputPane.OutputString("Succeeded: " + projectsSucceeded.ToString() + " Failed: " + projectsFailed.ToString() + "\n");
+
+                        string message = string.Format(CultureInfo.CurrentCulture, "Found {0} projects to build", projects.Count);
+                        foreach (VCProject p in projects)
+                        {
+                            message += "\nPROJECT:" + p.ProjectFile;
+                            message += builder.GetProjectInformation(p.ProjectFile);
+                        }
+                        string title = "BuildCommand";
+
+                        VsShellUtilities.ShowMessageBox(
+                            ServiceProvider,
+                            message,
+                            title,
+                            OLEMSGICON.OLEMSGICON_INFO,
+                            OLEMSGBUTTON.OLEMSGBUTTON_OK,
+                            OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+                    });
+                }
+                );
             
-            VsShellUtilities.ShowMessageBox(
-                ServiceProvider,
-                message,
-                title,
-                OLEMSGICON.OLEMSGICON_INFO,
-                OLEMSGBUTTON.OLEMSGBUTTON_OK,
-                OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
         }
     }
 }

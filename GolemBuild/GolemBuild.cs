@@ -45,7 +45,7 @@ namespace GolemBuild
                 dir.Delete(true);
             }
 
-            OnClear.Invoke();
+            //OnClear.Invoke();
             OnMessage.Invoke("--- Compiling " + Path.GetFileNameWithoutExtension(projPath) + " " + configuration + " " + platform + " with GolemBuild ---");
             
 
@@ -108,15 +108,18 @@ namespace GolemBuild
 
                 CallPreLinkEvents(project);
 
-                OnMessage.Invoke("Linking...");
-                string outputFile;
-                if (!LinkProject(project, platform, out outputFile))
+                if (tasks.Count > 0)
                 {
-                    OnMessage.Invoke("- Linking failed -");
-                    return false;
-                }
+                    OnMessage.Invoke("Linking...");
+                    string outputFile;
+                    if (!LinkProject(project, platform, out outputFile))
+                    {
+                        OnMessage.Invoke("- Linking failed -");
+                        return false;
+                    }
 
-                OnMessage.Invoke("-> " + outputFile);
+                    OnMessage.Invoke("-> " + outputFile);
+                }
                 OnMessage.Invoke("- Compilation successful -");
 
                 CallPostBuildEvents(project);
@@ -671,6 +674,7 @@ namespace GolemBuild
             string linkerPath = "";
             object linkTask = null;
             string linkerOptions = "";
+            string importLibrary = "";
             if (configurationType == "StaticLibrary")
             {
                 var libDefinitions = project.ItemDefinitions["Lib"];
@@ -686,6 +690,11 @@ namespace GolemBuild
                 linkerOptions = GenerateTaskCommandLine(linkTask, new string[] { "OutputFile", "ProfileGuidedDatabase" }, linkDefinitions.Metadata);
                 outputFile = linkDefinitions.GetMetadataValue("OutputFile").Replace('\\', '/');
                 linkerPath = GetLinkerPath(project, platform);
+                
+                if (configurationType == "DynamicLibrary")
+                {
+                    importLibrary = linkDefinitions.GetMetadataValue("ImportLibrary").Replace('\\', '/');
+                }
             }
 
             Directory.CreateDirectory(Path.Combine(projectPath, Path.GetDirectoryName(outputFile)));
@@ -702,7 +711,10 @@ namespace GolemBuild
 
             linkerProcess.Start();
             StreamReader linkOutput = linkerProcess.StandardOutput;
+            linkerProcess.StandardInput.WriteLine("@echo off");
             linkerProcess.StandardInput.WriteLine("\"" + GetDevCmdPath(project, platform) + "\"");
+            linkerProcess.StandardInput.WriteLine(projectPath[0] + ":"); // Change drive
+            linkerProcess.StandardInput.WriteLine("cd " + projectPath); // CD
 
             string linkCommand = "\"" + linkerPath + "\" " + linkerOptions + " /OUT:\"" + outputFile + "\"";
 
@@ -738,6 +750,11 @@ namespace GolemBuild
                     OnMessage.Invoke("[LINK ERROR]: " + output);
                     linkSuccessful = false;
                 }
+            }
+
+            if (linkSuccessful && importLibrary.Length > 0)
+            {
+                OnMessage.Invoke("Import library: " + importLibrary);
             }
 
             return linkSuccessful;
@@ -1444,6 +1461,12 @@ namespace GolemBuild
 
             var GenCmdLineMethod = Task.GetType().GetRuntimeMethods().Where(meth => meth.Name == "GenerateCommandLine").First();
             return GenCmdLineMethod.Invoke(Task, new object[] { Type.Missing, Type.Missing}) as string;
+        }
+
+        public void ClearTasks()
+        {
+            tasks.Clear();
+            pchTasks.Clear();
         }
 
     }
