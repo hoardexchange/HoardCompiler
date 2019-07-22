@@ -14,6 +14,7 @@ namespace GolemBuild
     public class GolemBuild
     {
         const bool runDistributed = true; // TODO: Figure out if we are attached to a broker or not
+        const bool runVerbose = false; // TODO: Add this as a checkbox somewhere
 
         public event Action<string> OnError;
         public event Action<string> OnMessage;
@@ -277,7 +278,7 @@ namespace GolemBuild
                         }
                     }
 
-                    if (!foundFile)
+                    if (!foundFile && runVerbose)
                     {
                         OnMessage.Invoke("Warning: Could not find include file " + include);
                     }
@@ -303,7 +304,7 @@ namespace GolemBuild
                             }
                         }
 
-                        if (!foundFile)
+                        if (!foundFile && runVerbose)
                         {
                             OnMessage.Invoke("Warning: Could not find local include file " + include);
                         }
@@ -360,6 +361,8 @@ namespace GolemBuild
             return true;
         }
 
+
+
         private bool BuildPackagedTasks(Project project)
         {
             string projectPath = Path.GetDirectoryName(project.FullPath);
@@ -368,9 +371,9 @@ namespace GolemBuild
             string golemBuildTasksPath = Path.Combine(projectPath, "GolemBuildTasks");
 
             Process[] processes = new Process[tasks.Count];
-            StreamReader[] outputs = new StreamReader[tasks.Count];
-            StreamReader[] errorOutputs = new StreamReader[tasks.Count];
             bool[] hasFinished = new bool[tasks.Count];
+            bool[] hasErrored = new bool[tasks.Count];
+            bool compilationSucceeded = true;
 
             // Start building packaged tasks
             for (int i = 0; i < tasks.Count; i++)
@@ -388,9 +391,40 @@ namespace GolemBuild
                 processes[i].StartInfo.CreateNoWindow = true;
 
                 processes[i].Start();
-                outputs[i] = processes[i].StandardOutput;
-                errorOutputs[i] = processes[i].StandardError;
+                
+                int index = i; // Make copy of i, else the lambda captures are wrong...
+                processes[i].OutputDataReceived += (sender, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string output = e.Data;
+                        if (output.Contains(" error") || output.Contains("fatal error"))
+                        {
+                            OnMessage.Invoke("[ERROR] " + tasks[index].FilePath + ": " + output);
+                            hasErrored[index] = true;
+                            compilationSucceeded = false;
+                        }
+                        else if (output.Contains("warning"))
+                        {
+                            OnMessage.Invoke("[WARNING] " + tasks[index].FilePath + ": " + output);
+                        }
+                    }
+                };
 
+                processes[i].ErrorDataReceived += (sender, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string output = e.Data;
+                        OnMessage.Invoke("[ERROR] " + tasks[index].FilePath + ": " + output);
+                        hasErrored[index] = true;
+                        compilationSucceeded = false;
+                    }
+                };
+                processes[i].BeginOutputReadLine();
+                processes[i].BeginErrorReadLine();
+
+                processes[i].StandardInput.WriteLine("@echo off");
                 processes[i].StandardInput.WriteLine(taskPath[0] + ":"); // Change drive
                 processes[i].StandardInput.WriteLine("cd \"" + taskPath + "\""); // CD
                 processes[i].StandardInput.WriteLine("golembuild"); // Build
@@ -399,7 +433,6 @@ namespace GolemBuild
 
             // Finish all compilation processes
             bool stillRunning = true;
-            bool compilationSucceeded = true;
             while (stillRunning)
             {
                 bool allFinished = true;
@@ -410,28 +443,7 @@ namespace GolemBuild
                         if (!hasFinished[i])
                         {
                             hasFinished[i] = true;
-
-                            bool error = false;
-                            while (outputs[i].Peek() >= 0)
-                            {
-                                string output = outputs[i].ReadLine();
-                                if (output.Contains(" error") || output.Contains("fatal error"))
-                                {
-                                    OnMessage.Invoke("[ERROR] " + tasks[i].FilePath + ": " + output);
-                                    error = true;
-                                    compilationSucceeded = false;
-                                }
-                            }
-
-                            while (errorOutputs[i].Peek() >= 0)
-                            {
-                                string output = errorOutputs[i].ReadLine();
-                                OnMessage.Invoke("[ERROR] " + tasks[i].FilePath + ": " + output);
-                                error = true;
-                                compilationSucceeded = false;
-                            }
-
-                            if (!error)
+                            if (!hasErrored[i])
                             {
                                 OnMessage.Invoke("[SUCCESS] " + tasks[i].FilePath);
 
@@ -473,9 +485,10 @@ namespace GolemBuild
             }
 
             Process[] processes = new Process[pchTasks.Count];
-            StreamReader[] outputs = new StreamReader[pchTasks.Count];
             bool[] hasFinished = new bool[pchTasks.Count];
-            
+            bool[] hasErrored = new bool[pchTasks.Count];
+            bool compilationSucceeded = true;
+
             // Start all compilation processes
             for (int i = 0; i < pchTasks.Count; i++)
             {
@@ -490,7 +503,38 @@ namespace GolemBuild
                 processes[i].StartInfo.CreateNoWindow = true;
 
                 processes[i].Start();
-                outputs[i] = processes[i].StandardOutput;
+
+                int index = i; // Make copy of i, else the lambda captures are wrong...
+                processes[i].OutputDataReceived += (sender, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string output = e.Data;
+                        if (output.Contains(" error") || output.Contains("fatal error"))
+                        {
+                            OnMessage.Invoke("[ERROR] " + pchTasks[index].FilePath + ": " + output);
+                            hasErrored[index] = true;
+                            compilationSucceeded = false;
+                        }
+                        else if (output.Contains("warning"))
+                        {
+                            OnMessage.Invoke("[WARNING] " + pchTasks[index].FilePath + ": " + output);
+                        }
+                    }
+                };
+
+                processes[i].ErrorDataReceived += (sender, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string output = e.Data;
+                        OnMessage.Invoke("[ERROR] " + pchTasks[index].FilePath + ": " + output);
+                        hasErrored[index] = true;
+                        compilationSucceeded = false;
+                    }
+                };
+                processes[i].BeginOutputReadLine();
+                processes[i].BeginErrorReadLine();
 
                 processes[i].StandardInput.WriteLine(projectPath[0] + ":"); // Change drive
                 processes[i].StandardInput.WriteLine("cd " + projectPath); // CD
@@ -515,7 +559,6 @@ namespace GolemBuild
 
             // Finish all compilation processes
             bool stillRunning = true;
-            bool compilationSucceeded = true;
             while (stillRunning)
             {
                 bool allFinished = true;
@@ -527,19 +570,7 @@ namespace GolemBuild
                         {
                             hasFinished[i] = true;
 
-                            bool error = false;
-                            while (outputs[i].Peek() >= 0)
-                            {
-                                string output = outputs[i].ReadLine();
-                                if (output.Contains(" error") || output.Contains("fatal error"))
-                                {
-                                    OnMessage.Invoke("[ERROR] " + pchTasks[i].FilePath + ": " + output);
-                                    error = true;
-                                    compilationSucceeded = false;
-                                }
-                            }
-
-                            if (!error)
+                            if (!hasErrored[i])
                             {
                                 OnMessage.Invoke("[SUCCESS] " + pchTasks[i].FilePath);
                             }
@@ -570,11 +601,12 @@ namespace GolemBuild
                 OnMessage?.Invoke(string.Format("Task [#{0}]: {1} {2} {3} {4}", i, task.Compiler, task.CompilerArgs, task.FilePath, task.OutputPath));
             }
             Process[] processes = new Process[tasks.Count];
-            StreamReader[] outputs = new StreamReader[tasks.Count];
             bool[] hasFinished = new bool[tasks.Count];
+            bool[] hasErrored = new bool[tasks.Count];
+            bool compilationSucceeded = true;
 
             // Start all compilation processes
-            for(int i = 0; i < tasks.Count; i++)
+            for (int i = 0; i < tasks.Count; i++)
             {
                 processes[i] = new Process();
 
@@ -587,7 +619,37 @@ namespace GolemBuild
                 processes[i].StartInfo.CreateNoWindow = true;
 
                 processes[i].Start();
-                outputs[i] = processes[i].StandardOutput;
+                int index = i; // Make copy of i, else the lambda captures are wrong...
+                processes[i].OutputDataReceived += (sender, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string output = e.Data;
+                        if (output.Contains(" error") || output.Contains("fatal error"))
+                        {
+                            OnMessage.Invoke("[ERROR] " + tasks[index].FilePath + ": " + output);
+                            hasErrored[index] = true;
+                            compilationSucceeded = false;
+                        }
+                        else if (output.Contains("warning"))
+                        {
+                            OnMessage.Invoke("[WARNING] " + tasks[index].FilePath + ": " + output);
+                        }
+                    }
+                };
+
+                processes[i].ErrorDataReceived += (sender, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        string output = e.Data;
+                        OnMessage.Invoke("[ERROR] " + tasks[index].FilePath + ": " + output);
+                        hasErrored[index] = true;
+                        compilationSucceeded = false;
+                    }
+                };
+                processes[i].BeginOutputReadLine();
+                processes[i].BeginErrorReadLine();
 
                 processes[i].StandardInput.WriteLine(projectPath[0] + ":"); // Change drive
                 processes[i].StandardInput.WriteLine("cd " + projectPath); // CD
@@ -609,7 +671,6 @@ namespace GolemBuild
 
             // Finish all compilation processes
             bool stillRunning = true;
-            bool compilationSucceeded = true;
             while(stillRunning)
             {
                 bool allFinished = true;
@@ -621,19 +682,7 @@ namespace GolemBuild
                         {
                             hasFinished[i] = true;
 
-                            bool error = false;
-                            while (outputs[i].Peek() >= 0)
-                            {
-                                string output = outputs[i].ReadLine();
-                                if (output.Contains(" error") || output.Contains("fatal error"))
-                                {
-                                    OnMessage.Invoke("[ERROR] " + tasks[i].FilePath + ": " + output);
-                                    error = true;
-                                    compilationSucceeded = false;
-                                }
-                            }
-
-                            if (!error)
+                            if (!hasErrored[i])
                             {
                                 OnMessage.Invoke("[SUCCESS] " + tasks[i].FilePath);
                             }
@@ -699,6 +748,8 @@ namespace GolemBuild
 
             Directory.CreateDirectory(Path.Combine(projectPath, Path.GetDirectoryName(outputFile)));
 
+            bool linkSuccessful = true;
+
             Process linkerProcess = new Process();
 
             linkerProcess.StartInfo.FileName = "cmd.exe";
@@ -710,7 +761,32 @@ namespace GolemBuild
             linkerProcess.StartInfo.CreateNoWindow = true;
 
             linkerProcess.Start();
-            StreamReader linkOutput = linkerProcess.StandardOutput;
+
+            linkerProcess.OutputDataReceived += (sender, e) =>
+            {
+                if (e.Data != null)
+                {
+                    string output = e.Data;
+                    if (output.Contains(" error") || output.Contains("fatal error"))
+                    {
+                        OnMessage.Invoke("[LINK ERROR] " + output);
+                        linkSuccessful = false;
+                    }
+                }
+            };
+
+            linkerProcess.ErrorDataReceived += (sender, e) =>
+            {
+                if (e.Data != null)
+                {
+                    string output = e.Data;
+                    OnMessage.Invoke("[LINK ERROR] " + output);
+                    linkSuccessful = false;
+                }
+            };
+            linkerProcess.BeginOutputReadLine();
+            linkerProcess.BeginErrorReadLine();
+
             linkerProcess.StandardInput.WriteLine("@echo off");
             linkerProcess.StandardInput.WriteLine("\"" + GetDevCmdPath(project, platform) + "\"");
             linkerProcess.StandardInput.WriteLine(projectPath[0] + ":"); // Change drive
@@ -741,17 +817,6 @@ namespace GolemBuild
                 OnMessage.Invoke("[LINK ERROR]: Linker timed out after 30 seconds");
             }
 
-            bool linkSuccessful = exited;
-            while (linkOutput.Peek() >= 0)
-            {
-                string output = linkOutput.ReadLine();
-                if (output.Contains(" error") || output.Contains("fatal error"))
-                {
-                    OnMessage.Invoke("[LINK ERROR]: " + output);
-                    linkSuccessful = false;
-                }
-            }
-
             if (linkSuccessful && importLibrary.Length > 0)
             {
                 OnMessage.Invoke("Import library: " + importLibrary);
@@ -763,13 +828,12 @@ namespace GolemBuild
         bool FindCommonPath(string path, string path2, out string common)
         {
             common = "";
-
             string[] string2Tokenized = path2.Split('\\');
 
-            for(int i = string2Tokenized.Length-1; i >= 0; i--)
+            for (int i = string2Tokenized.Length - 1; i >= 0; i--)
             {
                 string subStringToTest = "";
-                for(int j = 0; j < i; j++)
+                for (int j = 0; j < i; j++)
                 {
                     subStringToTest = Path.Combine(subStringToTest, string2Tokenized[j]);
                 }
@@ -795,10 +859,17 @@ namespace GolemBuild
                 {
                     string fixedFileName = fileName.Replace('/', '\\');
 
-                    string commonPath;
-                    if (FindCommonPath(previousFileName, fixedFileName, out commonPath))
+                    if (fixedFileName.Contains('\\'))
                     {
-                        path = Path.Combine(commonPath, fixedFileName);
+                        string commonPath;
+                        if (FindCommonPath(previousFileName, fixedFileName, out commonPath))
+                        {
+                            path = Path.Combine(commonPath, fixedFileName);
+                        }
+                    }
+                    else
+                    {
+                        path = Path.Combine(Path.GetDirectoryName(previousFileName), fixedFileName);
                     }
                 }
             }
@@ -819,7 +890,7 @@ namespace GolemBuild
 
                 if (!foundFile)
                 {
-                    if (!localIncludes.Contains(fileName))
+                    if (!localIncludes.Contains(fileName) && runVerbose)
                     {
                         OnMessage.Invoke("Could not find include: " + fileName);
                     }
@@ -998,8 +1069,17 @@ namespace GolemBuild
                         FindIncludes(project, item.EvaluatedInclude, "", includePaths, ref includes, ref localIncludes);
 
                         OnMessage.Invoke(">> " + item.EvaluatedInclude);
-                        OnMessage.Invoke("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
-                        OnMessage.Invoke("   Found " + localIncludes.Count + " includes: " + PrintIncludes(localIncludes));
+                        if (runVerbose)
+                        {
+                            OnMessage.Invoke("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
+                            OnMessage.Invoke("   Found " + localIncludes.Count + " local includes: " + PrintIncludes(localIncludes));
+                        }
+                        else
+                        {
+                            OnMessage.Invoke("   Found " + includes.Count + " includes");
+                            OnMessage.Invoke("   Found " + localIncludes.Count + " local includes");
+                        }
+                        
 
                         var CLtask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                         CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
@@ -1042,8 +1122,16 @@ namespace GolemBuild
                 FindIncludes(project, item.EvaluatedInclude, "", includePaths, ref includes, ref localIncludes);
 
                 OnMessage.Invoke(">> " + item.EvaluatedInclude);
-                OnMessage.Invoke("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
-                OnMessage.Invoke("   Found " + localIncludes.Count + " includes: " + PrintIncludes(localIncludes));
+                if (runVerbose)
+                {
+                    OnMessage.Invoke("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
+                    OnMessage.Invoke("   Found " + localIncludes.Count + " local includes: " + PrintIncludes(localIncludes));
+                }
+                else
+                {
+                    OnMessage.Invoke("   Found " + includes.Count + " includes");
+                    OnMessage.Invoke("   Found " + localIncludes.Count + " local includes");
+                }
 
                 var Task = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                 Task.GetType().GetProperty("Sources").SetValue(Task, new TaskItem[] { new TaskItem() });
