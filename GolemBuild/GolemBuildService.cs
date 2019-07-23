@@ -19,7 +19,7 @@ namespace GolemBuild
         public GolemBuildService(string hubUrl)
         {
             // Configure API key authorization: serviceToken
-            Configuration.Default.AddApiKey("X-GU-APIKEY", "YOUR_API_KEY");
+            //Configuration.Default.AddApiKey("X-GU-APIKEY", "YOUR_API_KEY");
             // Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
             // Configuration.Default.AddApiKeyPrefix("X-GU-APIKEY", "Bearer");
             // Configure API key authorization: systemName
