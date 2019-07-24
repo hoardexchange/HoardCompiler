@@ -47,6 +47,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CompilationTask.cs" />
+    <Compile Include="DataPackage.cs" />
     <Compile Include="GolemBuild.cs" />
     <Compile Include="GolemBuildService.cs" />
     <Compile Include="IBuildService.cs" />
