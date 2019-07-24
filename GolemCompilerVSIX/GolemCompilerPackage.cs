@@ -57,6 +57,8 @@ namespace GolemCompilerVSIX
 
 		public IVsOutputWindowPane OutputPane { get; private set; }
         public DTE Dte { get; private set; }
+
+        public GolemBuild.GolemBuildService buildService = null;
         /// <summary>
         /// Initializes a new instance of the <see cref="GolemCompilerPackage"/> class.
         /// </summary>
@@ -77,6 +79,9 @@ namespace GolemCompilerVSIX
         protected override void Initialize()
         {
             base.Initialize();
+
+            //buildService = new GolemBuild.GolemBuildService("http://10.30.10.121:6162");
+            //buildService.Start();
 
             //Add build commands
             BuildCommand.Initialize(this);
