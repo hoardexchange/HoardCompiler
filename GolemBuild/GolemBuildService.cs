@@ -167,7 +167,15 @@ namespace GolemBuild
                     
                     //1. Create deployment
                     string fileName = Path.GetFileNameWithoutExtension(task.FilePath);
-                    string hash = "SHA1:"+fileName;//should be the hash of name or file - note that SHA1 or SHA3 prefix is a must
+                    string tarPath = Path.Combine(GolemBuild.golemBuildTasksPath, fileName + ".tar.gz");
+
+                    string hash = "SHA1:";
+                    byte[] dataStream = File.ReadAllBytes(tarPath);
+                    using (var cryptoProvider = new SHA1CryptoServiceProvider())
+                    {
+                        hash += BitConverter.ToString(cryptoProvider.ComputeHash(dataStream)).Replace("-", string.Empty).ToLower();
+                    }
+
                     DeploymentSpecImage specImg = new DeploymentSpecImage(hash, "http://"+myIP+":"+ServerPort+ "/requestID/"+ fileName);
                     //create deployment
                     DeploymentSpec spec = new DeploymentSpec(EnvType.Hd, specImg, "compiler", new List<string>() {});
@@ -234,65 +242,77 @@ namespace GolemBuild
 
         private void ProcessRequest(HttpListenerContext context)
         {
-            HttpListenerRequest request = context.Request;
-
-            // Are they trying to upload a file?
-            if (request.HttpMethod == "PUT")
+            try
             {
-                System.IO.Stream input = request.InputStream;
-                string zipName = Path.Combine(BuildPath, Path.ChangeExtension(Path.GetFileNameWithoutExtension(request.RawUrl), ".zip"));
-                FileStream fileStream = File.Create(zipName);
-                input.CopyTo(fileStream);
-                fileStream.Close();
-                input.Close();
+                HttpListenerRequest request = context.Request;
 
-                // Send back OK
-                HttpListenerResponse response = context.Response;
-                response.Headers.Clear();
-                response.SendChunked = false;
-                response.StatusCode = 200;
-                response.Headers.Add("Server", String.Empty);
-                response.Headers.Add("Date", String.Empty);
-                response.Close();
-
-                ZipFile.ExtractToDirectory(zipName, Path.GetDirectoryName(zipName));
-            }
-            else // They are trying to download a file
-            {
-                // Obtain a response object.
-                HttpListenerResponse response = context.Response;
-
-                //let's check ranges
-                long offset = 0;
-                int size = -1;
-                foreach (string header in request.Headers.AllKeys)
+                // Are they trying to upload a file?
+                if (request.HttpMethod == "PUT")
                 {
-                    if (header == "Range")
-                    {
-                        string[] values = request.Headers.GetValues(header);
-                        string[] tokens = values[0].Split('=', '-');
-                        offset = int.Parse(tokens[1]);
-                        size = (int)(int.Parse(tokens[2]) - offset + 1);
-                    }
-                }
+                    System.IO.Stream input = request.InputStream;
+                    string zipName = Path.Combine(BuildPath, Path.ChangeExtension(Path.GetFileNameWithoutExtension(request.RawUrl), ".zip"));
+                    FileStream fileStream = File.Create(zipName);
+                    input.CopyTo(fileStream);
+                    fileStream.Close();
+                    input.Close();
 
-                //1. based on request.Url fetch the content data
-                DataPackage data = GetDataPackage(request.Url, offset, size);
-                //2. calculate some hash so provider nows if content has changed or not
-                response.AddHeader("ETag", data.DataHash);
-                response.ContentLength64 = data.DataStream.Length;
-                //response.ContentType = "application/x-gzip";// - not needed
-                //response.AddHeader("Accept-Ranges", "bytes");// - not needed?
-                System.IO.Stream output = response.OutputStream;
-                output.Write(data.DataStream, 0, data.DataStream.Length);
-                // close the output stream.
-                output.Close();
+                    // Send back OK
+                    HttpListenerResponse response = context.Response;
+                    response.Headers.Clear();
+                    response.SendChunked = false;
+                    response.StatusCode = 200;
+                    response.Headers.Add("Server", String.Empty);
+                    response.Headers.Add("Date", String.Empty);
+                    response.Close();
+
+                    ZipFile.ExtractToDirectory(zipName, Path.GetDirectoryName(zipName));
+                }
+                else // They are trying to download a file
+                {
+                    // Obtain a response object.
+                    HttpListenerResponse response = context.Response;
+
+                    //let's check ranges
+                    long offset = 0;
+                    int size = -1;
+                    foreach (string header in request.Headers.AllKeys)
+                    {
+                        if (header == "Range")
+                        {
+                            string[] values = request.Headers.GetValues(header);
+                            string[] tokens = values[0].Split('=', '-');
+                            offset = int.Parse(tokens[1]);
+                            size = (int)(int.Parse(tokens[2]) - offset + 1);
+                        }
+                    }
+
+                    //1. based on request.Url fetch the content data
+                    DataPackage data = GetDataPackage(request.Url, offset, size);
+                    //2. calculate some hash so provider nows if content has changed or not
+                    response.AddHeader("ETag", data.DataHash);
+                    response.ContentLength64 = data.DataStream.Length;
+                    //response.ContentType = "application/x-gzip";// - not needed
+                    //response.AddHeader("Accept-Ranges", "bytes");// - not needed?
+                    System.IO.Stream output = response.OutputStream;
+                    output.Write(data.DataStream, 0, data.DataStream.Length);
+                    // close the output stream.
+                    output.Close();
+                }
+            }
+            catch (TaskCanceledException ex)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                //TODO: do sth with this exception
+                Console.WriteLine(ex.Message);
             }
         }
 
         private DataPackage GetDataPackage(Uri url, long offset, int size)
         {
-            string fileName = Path.GetFileNameWithoutExtension(url.AbsolutePath);//for now it can be anything - provider uses it as a file name
+            string fileName = Path.GetFileNameWithoutExtension(url.AbsolutePath);
             string tarPath = Path.Combine(GolemBuild.golemBuildTasksPath, fileName + ".tar.gz");
 
             if (!File.Exists(tarPath))
@@ -314,7 +334,7 @@ namespace GolemBuild
             else
             {
                 data.DataStream = new byte[size];
-                FileStream file = new FileStream(tarPath, FileMode.Open);
+                FileStream file = new FileStream(tarPath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 file.Seek(offset, SeekOrigin.Begin);
                 file.Read(data.DataStream, 0, size);
                 file.Close();
