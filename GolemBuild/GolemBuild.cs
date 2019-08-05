@@ -1,4 +1,6 @@
-﻿using Microsoft.Build.Evaluation;
+﻿using ICSharpCode.SharpZipLib.GZip;
+using ICSharpCode.SharpZipLib.Tar;
+using Microsoft.Build.Evaluation;
 using Microsoft.Build.Utilities;
 using System;
 using System.Collections.Generic;
@@ -23,12 +25,13 @@ namespace GolemBuild
         private List<CompilationTask> pchTasks = new List<CompilationTask>();
         private List<CompilationTask> tasks = new List<CompilationTask>();
 
+        public static string golemBuildTasksPath = "";
+
         public bool BuildProject(string projPath, string configuration, string platform)
         {
             ProjectCollection projColl = new ProjectCollection();
             //load the project
             Project project = projColl.LoadProject(projPath);
-
 
             string projectPath = Path.GetDirectoryName(project.FullPath);
             string golemBuildPath = Path.Combine(projectPath, "GolemBuild");
@@ -56,17 +59,6 @@ namespace GolemBuild
                 project.SetGlobalProperty("Platform", platform);
                 project.ReevaluateIfNecessary();
                                 
-                //var ProjectReferences = project.Items.Where(elem => elem.ItemType == "ProjectReference");
-                /*foreach (var ProjRef in ProjectReferences)
-                {
-                    if (ProjRef.GetMetadataValue("ReferenceOutputAssembly") == "true" || ProjRef.GetMetadataValue("LinkLibraryDependencies") == "true")
-                    {
-                        //Console.WriteLine(string.Format("{0} referenced by {1}.", Path.GetFileNameWithoutExtension(ProjRef.EvaluatedInclude), Path.GetFileNameWithoutExtension(proj.FullPath)));
-                        EvaluateProjectReferences(Path.GetDirectoryName(proj.FullPath) + Path.DirectorySeparatorChar + ProjRef.EvaluatedInclude, evaluatedProjects, newProj);
-                    }
-                }
-                //Console.WriteLine("Adding " + Path.GetFileNameWithoutExtension(proj.FullPath));
-                evaluatedProjects.Add(newProj);*/
                 CreateCompilationTasks(project, platform);
 
                 CallPreBuildEvents(project);
@@ -90,12 +82,15 @@ namespace GolemBuild
                         return false;
                     }
 
-                    OnMessage.Invoke("Compiling packaged tasks...");
-                    if (!BuildPackagedTasks(project))
+                    OnMessage.Invoke("Queueing tasks...");
+                    if (!QueuePackagedTasks(project))
                     {
-                        OnMessage.Invoke("- Compiling packaged tasks failed -");
+                        OnMessage.Invoke("- Queueing failed -");
                         return false;
                     }
+
+                    OnMessage.Invoke("Waiting for queued tasks...");
+                    GolemBuildService.buildService.WaitTasks();
                 }
                 else
                 {
@@ -132,11 +127,35 @@ namespace GolemBuild
 
             return false;
         }
+        
+        private void AddDirectoryFilesToTar(TarArchive tarArchive, string sourceDirectory, bool recurse)
+        {
+            // Optionally, write an entry for the directory itself.
+            // Specify false for recursion here if we will add the directory's files individually.
+            TarEntry tarEntry = TarEntry.CreateEntryFromFile(sourceDirectory);
+            tarArchive.WriteEntry(tarEntry, false);
 
+            // Write each file to the tar.
+            string[] filenames = Directory.GetFiles(sourceDirectory);
+            foreach (string filename in filenames)
+            {
+                tarEntry = TarEntry.CreateEntryFromFile(filename);
+                tarArchive.WriteEntry(tarEntry, true);
+            }
+
+            if (recurse)
+            {
+                string[] directories = Directory.GetDirectories(sourceDirectory);
+                foreach (string directory in directories)
+                    AddDirectoryFilesToTar(tarArchive, directory, recurse);
+            }
+        }
         private bool PackageTasks(Project project)
         {
             string projectPath = Path.GetDirectoryName(project.FullPath);
             string golemBuildPath = Path.Combine(projectPath, "GolemBuildTasks");
+
+            golemBuildTasksPath = golemBuildPath;
 
             Directory.CreateDirectory(golemBuildPath);
 
@@ -174,7 +193,6 @@ namespace GolemBuild
 
                 }
             }
-            
 
             // Package tasks
             for (int i = 0; i < tasks.Count; i++)
@@ -233,15 +251,6 @@ namespace GolemBuild
                             File.Copy(srcIdbPath, Path.ChangeExtension(dstPdbPath, ".idb")); // IDB
                         pdbArg = " /Fd\"" + tasks[i].PDB + "\"";
                         usedPdb = true;
-                    }
-                    else // Create a placeholder file because /Fd doesn't create one...
-                    {
-                        //pdbArg = " /Fd\"" + Path.GetDirectoryName(tasks[i].PDB) + "\"";
-                        //pdbArg = " /Fd\"output\\\"";
-                        //string dstPdbPath = Path.Combine(taskPath, tasks[i].PDB);
-                        //Directory.CreateDirectory(Path.GetDirectoryName(dstPdbPath));
-                        //FileStream newPdFile = File.Create(dstPdbPath);
-                        //newPdFile.Close();
                     }
                 }
 
@@ -354,14 +363,42 @@ namespace GolemBuild
 
                     batch.WriteLine("copy \"" + srcPdb + "\" \"" + dstPdb + "\""); 
                 }
-                
+
+                // Zip output folder
+                batch.WriteLine("powershell.exe -nologo -noprofile -command \"& { Add-Type -A 'System.IO.Compression.FileSystem'; [IO.Compression.ZipFile]::CreateFromDirectory('output', 'output.zip'); }\"");
+
+                // Kill mspdbsrv.exe because it likes to bug out and stay open...
+                batch.WriteLine("taskkill /f /im mspdbsrv.exe");
+
                 batch.Close();
                 //batch.WriteLine("exit");
+
+                // Tar.gz the task
+                string tarName = taskPath + ".tar.gz";
+                using (var tarStream = File.Create(tarName))
+                using (var gzoStream = new GZipOutputStream(tarStream))
+                using (var tarArchive = TarArchive.CreateOutputTarArchive(gzoStream))
+                {
+                    tarArchive.RootPath = taskPath;
+                    AddDirectoryFilesToTar(tarArchive, taskPath, true);
+                }
             }
             return true;
         }
 
+        private bool QueuePackagedTasks(Project project)
+        {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
+            string golemBuildPath = Path.Combine(projectPath, "GolemBuild");
+            GolemBuildService.buildService.BuildPath = golemBuildPath;
 
+            // Start building packaged tasks
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                GolemBuildService.buildService.AddTask(tasks[i]);
+            }
+            return true;
+        }
 
         private bool BuildPackagedTasks(Project project)
         {
@@ -610,7 +647,7 @@ namespace GolemBuild
             {
                 processes[i] = new Process();
 
-                processes[i].StartInfo.FileName = "cmd.exe";//task.Compiler;
+                processes[i].StartInfo.FileName = "cmd.exe";
                 processes[i].StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
                 processes[i].StartInfo.UseShellExecute = false;
                 processes[i].StartInfo.RedirectStandardInput = true;

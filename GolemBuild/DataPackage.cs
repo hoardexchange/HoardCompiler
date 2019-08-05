@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace GolemBuild
 {
-    internal class DataPackage
+    class DataPackage
     {
         public byte[] DataStream { get; set; }
         public string DataHash { get; set; }

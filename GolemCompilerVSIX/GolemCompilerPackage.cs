@@ -80,8 +80,8 @@ namespace GolemCompilerVSIX
         {
             base.Initialize();
 
-            //buildService = new GolemBuild.GolemBuildService("http://10.30.10.121:6162");
-            //buildService.Start();
+            buildService = new GolemBuild.GolemBuildService("http://10.30.10.121:6162");
+            buildService.Start();
 
             //Add build commands
             BuildCommand.Initialize(this);

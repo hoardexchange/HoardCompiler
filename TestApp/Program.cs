@@ -2,6 +2,7 @@
 using GURestApi.Model;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -43,14 +44,36 @@ namespace TestApp
 
             var peers = peerApi.ListPeers();
 
+            int myPeer = -1;
+
+            for (int i = 0; i < peers.Count; i++)
             {
-                string hash = "SHA1:213fad4e020ded42e6a949f61cb560ab69bc9844";
-                DeploymentSpecImage specImg = new DeploymentSpecImage(hash, "http://10.30.8.234:6000/generatedID/test1.hdi");
+                if (peers[i].PeerAddr.Contains("10.30.8.5"))
+                {
+                    myPeer = i;
+                    break;
+                }
+            }
+
+            if (myPeer == -1)
+            {
+                return;
+            }
+
+            {
+                string hash = "SHA1:213fad4e430ded42e6a949f61cf560ac96ec9878";
+                DeploymentSpecImage specImg = new DeploymentSpecImage(hash, "http://10.30.8.5:6000/generatedID/test1.hdi");
                 DeploymentSpec spec = new DeploymentSpec(EnvType.Hd, specImg, "compiler",new List<string>() { "dupa"});
-                var peer = peers[0];
+                var peer = peers[myPeer];
                 string depId = peerApi.CreateDeployment(peer.NodeId, spec);
                 depId = depId.Replace("\"", "");
-                var results = peerApi.UpdateDeployment(peer.NodeId, depId, new List<Command>() { new ExecCommand("test.bat",new List<string>())});
+
+                // Run batch file
+                var results = peerApi.UpdateDeployment(peer.NodeId, depId, new List<Command>() { new ExecCommand("Debug/golemtest.bat",new List<string>())});
+
+                // Upload output.zip
+                results = peerApi.UpdateDeployment(peer.NodeId, depId, new List<Command>() { new UploadFileCommand("http://10.30.8.5:6000/generatedID/", "output.zip") });
+
                 peerApi.DropDeployment(peer.NodeId, depId);
                 System.Console.WriteLine(depId);                
                 stopServer();
@@ -94,7 +117,7 @@ namespace TestApp
         private static void httpServer()
         {
             //load file targ.gz for testing
-            var fileBytes = System.IO.File.ReadAllBytes("External_test_data.tar.gz");
+            var fileBytes = System.IO.File.ReadAllBytes("Debug.tgz");
             HttpListener listener = new HttpListener();
             listener.Prefixes.Add("http://+:6000/generatedID/");
             listener.Start();
@@ -106,32 +129,45 @@ namespace TestApp
                     Task<HttpListenerContext> context = listener.GetContextAsync();
                     context.Wait(serverToken.Token);
                     HttpListenerRequest request = context.Result.Request;
-                    // Obtain a response object.
-                    HttpListenerResponse response = context.Result.Response;
-                    //let's check ranges
-                    long offset = 0;
-                    long size = fileBytes.Length;
-                    foreach (string header in request.Headers.AllKeys)
+
+                    // Are they trying to upload a file?
+                    if (request.HttpMethod == "PUT")
                     {
-                        if (header=="Range")
-                        {
-                            string[] values = request.Headers.GetValues(header);
-                            string[] tokens = values[0].Split('=', '-');
-                            offset = int.Parse(tokens[1]);
-                            size = int.Parse(tokens[2]) - offset + 1;
-                        }
+                        System.IO.Stream input = request.InputStream;
+                        FileStream fileStream = File.Create("testzip.zip");
+                        input.CopyTo(fileStream);
+                        fileStream.Close();
+                        input.Close();
                     }
-                    response.AddHeader("ETag", "675af34563dc-tr34");
-                    // Construct a response.
-                    // Get a response stream and write the response to it.
-                    response.ContentLength64 = size;
-                    response.ContentType = "application/x-gzip";
-                    response.AddHeader("Accept-Ranges", "bytes");
-                    System.IO.Stream output = response.OutputStream;
-                    Task ret = output.WriteAsync(fileBytes, (int)offset, (int)size);
-                    ret.Wait();
-                    // You must close the output stream.
-                    output.Close();
+                    else // They are trying to download a file
+                    {
+                        // Obtain a response object.
+                        HttpListenerResponse response = context.Result.Response;
+                        //let's check ranges
+                        long offset = 0;
+                        long size = fileBytes.Length;
+                        foreach (string header in request.Headers.AllKeys)
+                        {
+                            if (header == "Range")
+                            {
+                                string[] values = request.Headers.GetValues(header);
+                                string[] tokens = values[0].Split('=', '-');
+                                offset = int.Parse(tokens[1]);
+                                size = int.Parse(tokens[2]) - offset + 1;
+                            }
+                        }
+                        response.AddHeader("ETag", "675af34563dc-tr34");
+                        // Construct a response.
+                        // Get a response stream and write the response to it.
+                        response.ContentLength64 = size;
+                        response.ContentType = "application/x-gzip";
+                        response.AddHeader("Accept-Ranges", "bytes");
+                        System.IO.Stream output = response.OutputStream;
+                        Task ret = output.WriteAsync(fileBytes, (int)offset, (int)size);
+                        ret.Wait();
+                        // You must close the output stream.
+                        output.Close();
+                    }
                 }
                 catch(OperationCanceledException ex)
                 {
