@@ -164,35 +164,44 @@ namespace GolemBuild
                     {
                         myPeer = 0; // Just use first one for now, using more providers is a TODO
                     }
-                    
-                    //1. Create deployment
-                    string fileName = Path.GetFileNameWithoutExtension(task.FilePath);
-                    string tarPath = Path.Combine(GolemBuild.golemBuildTasksPath, fileName + ".tar.gz");
 
-                    string hash = "SHA1:";
-                    byte[] dataStream = File.ReadAllBytes(tarPath);
-                    using (var cryptoProvider = new SHA1CryptoServiceProvider())
+                    try
                     {
-                        hash += BitConverter.ToString(cryptoProvider.ComputeHash(dataStream)).Replace("-", string.Empty).ToLower();
+                        //1. Create deployment
+                        string fileName = Path.GetFileNameWithoutExtension(task.FilePath);
+                        string tarPath = Path.Combine(GolemBuild.golemBuildTasksPath, fileName + ".tar.gz");
+
+                        string hash = "SHA1:";
+                        byte[] dataStream = File.ReadAllBytes(tarPath);
+                        using (var cryptoProvider = new SHA1CryptoServiceProvider())
+                        {
+                            hash += BitConverter.ToString(cryptoProvider.ComputeHash(dataStream)).Replace("-", string.Empty).ToLower();
+                        }
+
+                        DeploymentSpecImage specImg = new DeploymentSpecImage(hash, "http://" + myIP + ":" + ServerPort + "/requestID/" + fileName);
+                        //create deployment
+                        DeploymentSpec spec = new DeploymentSpec(EnvType.Hd, specImg, "compiler", new List<string>() { });
+                        string depId = await golemApi.CreateDeploymentAsync(peers[myPeer].NodeId, spec);
+                        depId = depId.Replace("\"", "");//TODO: remove this! current bug fix
+                                                        //TODO: based on our needs we can also create a session ID, and simply wait for peers to grab deployed tasks from there
+                                                        //though I haven't checked that
+
+                        var results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new ExecCommand("golembuild.bat", new List<string>()) });
+
+                        // Upload output.zip
+                        results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new UploadFileCommand("http://" + myIP + ":" + ServerPort + "/requestID/" + fileName, "output.zip") });
+
+                        //TODO: when it is done either end deployment or add more tasks...
+                        golemApi.DropDeployment(peers[myPeer].NodeId, depId);
                     }
-
-                    DeploymentSpecImage specImg = new DeploymentSpecImage(hash, "http://"+myIP+":"+ServerPort+ "/requestID/"+ fileName);
-                    //create deployment
-                    DeploymentSpec spec = new DeploymentSpec(EnvType.Hd, specImg, "compiler", new List<string>() {});
-                    string depId = await golemApi.CreateDeploymentAsync(peers[myPeer].NodeId, spec);
-                    depId = depId.Replace("\"", "");//TODO: remove this! current bug fix
-                    //TODO: based on our needs we can also create a session ID, and simply wait for peers to grab deployed tasks from there
-                    //though I haven't checked that
-
-                    var results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new ExecCommand("golembuild.bat", new List<string>())});
-
-                    // Upload output.zip
-                    results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new UploadFileCommand("http://"+myIP+":"+ServerPort+ "/requestID/" + fileName, "output.zip") });
-
-                    //TODO: when it is done either end deployment or add more tasks...
-                    golemApi.DropDeployment(peers[myPeer].NodeId, depId);
-
-                    System.Threading.Interlocked.Decrement(ref taskCount);
+                    catch(Exception ex)
+                    {
+                        Console.WriteLine(ex.Message);
+                    }
+                    finally
+                    {
+                        System.Threading.Interlocked.Decrement(ref taskCount);
+                    }
                 }
                 await Task.Delay(1000);
             }
@@ -258,11 +267,12 @@ namespace GolemBuild
 
                     // Send back OK
                     HttpListenerResponse response = context.Response;
-                    response.Headers.Clear();
+                    response.Headers.Clear();                    
                     response.SendChunked = false;
-                    response.StatusCode = 200;
-                    response.Headers.Add("Server", String.Empty);
-                    response.Headers.Add("Date", String.Empty);
+                    response.StatusCode = 201;
+                    response.AddHeader("Content-Location", zipName);
+                    //response.AddHeader("Server", String.Empty);
+                    //response.AddHeader("Date", String.Empty);
                     response.Close();
 
                     ZipFile.ExtractToDirectory(zipName, Path.GetDirectoryName(zipName));
