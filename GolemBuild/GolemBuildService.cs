@@ -20,6 +20,9 @@ namespace GolemBuild
         public event EventHandler<BuildTaskStatusChangedArgs> BuildTaskStatusChanged;
 
         public string BuildPath = "";
+        public bool compilationSuccessful = false;
+
+        public event Action<string> OnMessage;
 
         private Task mainLoop = null;
         private Task requestLoop = null;
@@ -78,12 +81,13 @@ namespace GolemBuild
             return taskCount;
         }
 
-        public void WaitTasks()
+        public bool WaitTasks()
         {
             while(GetTaskCount() > 0)
             {
                 System.Threading.Thread.Sleep(100);
             }
+            return compilationSuccessful;
         }
 
         public bool Start()
@@ -127,7 +131,6 @@ namespace GolemBuild
         {
             //first try to connect to the hub
             HubInfo = await golemApi.GetHubInfoAsync();
-            //TODO: would be nice to write this info to some output stream
 
             while (true)
             {
@@ -188,8 +191,32 @@ namespace GolemBuild
 
                         var results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new ExecCommand("golembuild.bat", new List<string>()) });
 
+                    bool error = false;
+                    string[] lines = results[0].Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+                    foreach(string line in lines)
+                    {
+                        if (line.Contains(" error") || line.Contains("fatal error"))
+                        {
+                            OnMessage?.Invoke("[ERROR] " + fileName + ": " + line);
+                            error = true;
+                        }
+                        else if (line.Contains("warning"))
+                        {
+                            OnMessage?.Invoke("[WARNING] " + fileName + ": " + line);
+                        }
+                    }
+
+                    if (!error)
+                    {
+                        OnMessage?.Invoke("[SUCCESS] " + fileName);
+
                         // Upload output.zip
                         results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new UploadFileCommand("http://" + myIP + ":" + ServerPort + "/requestID/" + fileName, "output.zip") });
+                    }
+                    else
+                    {
+                        compilationSuccessful = false;
+                    }
 
                         //TODO: when it is done either end deployment or add more tasks...
                         golemApi.DropDeployment(peers[myPeer].NodeId, depId);

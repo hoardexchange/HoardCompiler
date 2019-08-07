@@ -176,6 +176,7 @@ namespace GolemCompilerVSIX
         /// Start projects building
         /// </summary>
         /// <param name="projects"></param>
+        static bool hasInitedServiceEvents = false;
         private void RequestBuildProjects(List<VCProject> projects)
         {
             var task = ThreadHelper.JoinableTaskFactory.StartOnIdle(
@@ -199,6 +200,19 @@ namespace GolemCompilerVSIX
                         {
                             package.OutputPane.Clear();
                         };
+
+                        if (!hasInitedServiceEvents)
+                        {
+                            hasInitedServiceEvents = true;
+                            GolemBuild.GolemBuildService.buildService.OnMessage += (str) =>
+                            {
+                                package.OutputPane.OutputString(str + "\n");
+                            };
+                        }
+
+
+
+                        
 
                         int projectsSucceeded = 0;
                         int projectsFailed = 0;
