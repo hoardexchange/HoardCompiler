@@ -1,18 +1,14 @@
 ﻿using System;
 using System.ComponentModel;
-using System.ComponentModel.Design;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Threading;
 using EnvDTE;
 using Microsoft.VisualStudio;
-using Microsoft.VisualStudio.OLE.Interop;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
-using Microsoft.Win32;
 
-namespace GolemCompilerVSIX
+namespace GolemCompiler
 {
     /// <summary>
     /// Page in Options menu for customization
@@ -41,21 +37,20 @@ namespace GolemCompilerVSIX
     /// <summary>
     /// Main package of GolemCompiler project
     /// </summary>
-    [PackageRegistration(UseManagedResourcesOnly = true)]
+    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [InstalledProductRegistration("#110", "#112", "0.1", IconResourceID = 400)] // Info on this package for Help/About
     [Guid(GolemCompilerPackage.PackageGuidString)]
     [ProvideOptionPage(typeof(OptionPageGrid), "Golem Compiler", "Options", 0, 0, true)]
     [SuppressMessage("StyleCop.CSharp.DocumentationRules", "SA1650:ElementDocumentationMustBeSpelledCorrectly", Justification = "pkgdef, VS and vsixmanifest are valid VS terms")]
-    [ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string)]
+    [ProvideAutoLoad(UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
-    public sealed class GolemCompilerPackage : Package
+    public sealed class GolemCompilerPackage : AsyncPackage
     {
         /// <summary>
         /// GolemCompilerPackage GUID string.
         /// </summary>
         public const string PackageGuidString = "58caa410-0099-4620-a7b4-8cce182d193b";
 
-		public IVsOutputWindowPane OutputPane { get; private set; }
         public DTE Dte { get; private set; }
 
         public GolemBuild.GolemBuildService buildService = null;
@@ -76,9 +71,9 @@ namespace GolemCompilerVSIX
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
         /// where you can put all the initialization code that rely on services provided by VisualStudio.
         /// </summary>
-        protected override void Initialize()
+        protected override async System.Threading.Tasks.Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
-            base.Initialize();
+            await base.InitializeAsync(cancellationToken, progress);
 
             buildService = new GolemBuild.GolemBuildService("http://10.30.10.121:6162");
             buildService.Start();
@@ -86,24 +81,12 @@ namespace GolemCompilerVSIX
             //Add build commands
             BuildCommand.Initialize(this);
 
-            var outputWindow = GetService(typeof(SVsOutputWindow)) as IVsOutputWindow;
-            if (outputWindow == null) return;
+            await Logger.InitializeAsync(this, "GolemCompiler");
 
-            var outputPaneId = VSConstants.OutputWindowPaneGuid.GeneralPane_guid;
-            //Create Golem Compiler output window
-            var hresult = outputWindow.CreatePane(outputPaneId, "GolemCompiler", 1, 0);
-            ErrorHandler.ThrowOnFailure(hresult);
-
-            IVsOutputWindowPane pane = null;
-            hresult = outputWindow.GetPane(outputPaneId, out pane);
-            OutputPane = pane;
-            ErrorHandler.ThrowOnFailure(hresult);
+            Logger.Log("Golem Compiler extension initialized and ready to run!");
 
             //This is the main environment interface
-            Dte = (DTE)GetService(typeof(DTE));
-
-            OutputPane.Activate();
-            OutputPane.OutputString("Golem Compiler extension initialized and ready to run!");
+            Dte = await GetServiceAsync(typeof(DTE)) as DTE;
         }
 
         #endregion

@@ -7,7 +7,7 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.VCProjectEngine;
 
-namespace GolemCompilerVSIX
+namespace GolemCompiler
 {
     /// <summary>
     /// Build command handler
@@ -102,7 +102,6 @@ namespace GolemCompilerVSIX
         {            
             List<VCProject> projects = new List<VCProject>();
 
-            package.OutputPane.Activate();
             package.Dte.ExecuteCommand("File.SaveAll");
 
             foreach (var item in package.Dte.SelectedItems)
@@ -123,12 +122,9 @@ namespace GolemCompilerVSIX
             if (null == package.Dte.Solution)
                 return;
 
-            package.OutputPane.Activate();
-            package.OutputPane.Clear();
-
             if (package.Dte.Debugger.CurrentMode != dbgDebugMode.dbgDesignMode)
             {
-                package.OutputPane.OutputString("Build not launched due to active debugger.\r");
+                Logger.Log("Build not launched due to active debugger.\r");
                 return;
             }
 
@@ -187,18 +183,11 @@ namespace GolemCompilerVSIX
                         Solution sln = package.Dte.Solution;
                         var sc = sln.SolutionBuild.ActiveConfiguration as EnvDTE80.SolutionConfiguration2;
 
-                        package.OutputPane.Clear();
-
                         GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
 
                         builder.OnMessage += (str) =>
                         {
-                            package.OutputPane.OutputString(str + "\n");
-                        };
-
-                        builder.OnClear += () =>
-                        {
-                            package.OutputPane.Clear();
+                            Logger.Log(str + "\n");
                         };
 
                         if (!hasInitedServiceEvents)
@@ -206,13 +195,9 @@ namespace GolemCompilerVSIX
                             hasInitedServiceEvents = true;
                             GolemBuild.GolemBuildService.buildService.OnMessage += (str) =>
                             {
-                                package.OutputPane.OutputString(str + "\n");
+                                Logger.Log(str + "\n");
                             };
                         }
-
-
-
-                        
 
                         int projectsSucceeded = 0;
                         int projectsFailed = 0;
@@ -232,7 +217,7 @@ namespace GolemCompilerVSIX
                                 projectsFailed++;
                         }
 
-                        package.OutputPane.OutputString("Succeeded: " + projectsSucceeded.ToString() + " Failed: " + projectsFailed.ToString() + "\n");
+                        Logger.Log("Succeeded: " + projectsSucceeded.ToString() + " Failed: " + projectsFailed.ToString() + "\n");
 
                         string message = string.Format(CultureInfo.CurrentCulture, "Found {0} projects to build", projects.Count);
                         foreach (VCProject p in projects)

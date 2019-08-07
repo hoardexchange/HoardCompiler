@@ -20,7 +20,6 @@ namespace GolemBuild
 
         public event Action<string> OnError;
         public event Action<string> OnMessage;
-        public event Action OnClear;
 
         private List<CompilationTask> pchTasks = new List<CompilationTask>();
         private List<CompilationTask> tasks = new List<CompilationTask>();
