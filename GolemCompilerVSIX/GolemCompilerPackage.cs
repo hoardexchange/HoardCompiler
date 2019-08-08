@@ -76,6 +76,10 @@ namespace GolemCompiler
             await base.InitializeAsync(cancellationToken, progress);
 
             buildService = new GolemBuild.GolemBuildService("http://10.30.10.121:6162");
+            buildService.OnMessage += (str) =>
+            {
+                Logger.Log(str + "\n");
+            };
             buildService.Start();
 
             //Add build commands

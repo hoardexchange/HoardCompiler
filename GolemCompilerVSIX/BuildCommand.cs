@@ -192,11 +192,7 @@ namespace GolemCompiler
 
                         if (!hasInitedServiceEvents)
                         {
-                            hasInitedServiceEvents = true;
-                            GolemBuild.GolemBuildService.buildService.OnMessage += (str) =>
-                            {
-                                Logger.Log(str + "\n");
-                            };
+                            hasInitedServiceEvents = true;                            
                         }
 
                         int projectsSucceeded = 0;

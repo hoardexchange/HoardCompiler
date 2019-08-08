@@ -203,6 +203,7 @@ namespace GolemBuild
         {
             //first try to connect to the hub
             HubInfo = await golemApi.GetHubInfoAsync();
+            LogMessage($"Connected to Golem Hub\n{HubInfo.ToJson()}");
 
             while (true)
             {
