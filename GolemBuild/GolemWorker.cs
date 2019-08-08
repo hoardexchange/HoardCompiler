@@ -61,13 +61,15 @@ namespace GolemBuild
                     deploymentID = await golemApi.CreateDeploymentAsync(Peer.NodeId, deployment);
                 }
 
-                //TODO: gather all tasks into one task with more than one file
-                //TODO: this can be done automatically during AddTask()
-                string fileName = CombineTasks();
+                //1. Take all input files and includes and package them into one TAR package + notify HttpServer about that file
+                string packedFileName = PackFiles(taskList);
+
+                //2. Create command to compile those source files -> cl.exe ....
+                ExecCommand ecmd = GenerateCompileCommand(taskList);
 
                 var results = await golemApi.UpdateDeploymentAsync(Peer.NodeId, deploymentID, new List<Command>() {
-                    new DownloadFileCommand(Service.GetHttpDownloadUri(fileName), "output.zip"),
-                    new ExecCommand("golembuild.bat", new List<string>()) });
+                    new DownloadFileCommand(Service.GetHttpDownloadUri(packedFileName), packedFileName+".tar", FileFormat.Tar),
+                    ecmd });
 
                 bool error = false;
                 string[] lines = results[0].Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
@@ -75,21 +77,22 @@ namespace GolemBuild
                 {
                     if (line.Contains(" error") || line.Contains("fatal error"))
                     {
-                        Service.LogMessage("[ERROR] " + fileName + ": " + line);
+                        Service.LogMessage("[ERROR] " + packedFileName + ": " + line);
                         error = true;
                     }
                     else if (line.Contains("warning"))
                     {
-                        Service.LogMessage("[WARNING] " + fileName + ": " + line);
+                        Service.LogMessage("[WARNING] " + packedFileName + ": " + line);
                     }
                 }
 
                 if (!error)
                 {
-                    Service.LogMessage("[SUCCESS] " + fileName);
+                    Service.LogMessage("[SUCCESS] " + packedFileName);
 
                     // Upload output.zip
-                    results = await golemApi.UpdateDeploymentAsync(Peer.NodeId, deploymentID, new List<Command>() { new UploadFileCommand(Service.GetHttpUploadUri(fileName), "output.zip") });
+                    results = await golemApi.UpdateDeploymentAsync(Peer.NodeId, deploymentID, new List<Command>() {
+                        new UploadFileCommand(Service.GetHttpUploadUri(packedFileName), packedFileName+".zip") });
                 }
             }
             catch (Exception ex)
@@ -98,7 +101,12 @@ namespace GolemBuild
             }
         }
 
-        private string CombineTasks()
+        private ExecCommand GenerateCompileCommand(List<CompilationTask> taskList)
+        {
+            throw new NotImplementedException();
+        }
+
+        private string PackFiles(List<CompilationTask> taskList)
         {
             throw new NotImplementedException();
         }
