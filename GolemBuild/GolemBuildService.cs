@@ -30,11 +30,12 @@ namespace GolemBuild
         private ConcurrentQueue<CompilationTask> taskQueue = null;
         private int ServerPort = 6000;
         private string myIP = null;
-        private int taskCount = 0;
 
         public HubInfo HubInfo { get; private set; }
 
         private PeerApi golemApi = null;
+        private List<PeerInfo> knownPeers = new List<PeerInfo>();
+        private ConcurrentQueue<GolemWorker> workerPool = new ConcurrentQueue<GolemWorker>();
 
         public GolemBuildService(string hubUrl = "http://10.30.10.121:6162", int serverPort = 6000)//current default
         {
@@ -70,15 +71,29 @@ namespace GolemBuild
             buildService = this;
         }
 
+        internal string GetHttpDownloadUri(string fileName)
+        {
+            return "http://" + myIP + ":" + ServerPort + "/download/" + fileName;
+        }
+
+        internal string GetHttpUploadUri(string fileName)
+        {
+            return "http://" + myIP + ":" + ServerPort + "/upload/" + fileName;
+        }
+
+        public void LogMessage(string msg)
+        {
+            OnMessage?.Invoke(msg);
+        }
+
         public void AddTask(CompilationTask task)
         {
-            System.Threading.Interlocked.Increment(ref taskCount);
             taskQueue.Enqueue(task);
         }
 
         public int GetTaskCount()
         {
-            return taskCount;
+            return taskQueue.Count;
         }
 
         public bool WaitTasks()
@@ -125,6 +140,63 @@ namespace GolemBuild
             mainLoop = null;
             
             return true;
+        }
+
+        private async Task GolemHubQueryTask()
+        {
+            //first try to connect to the hub
+            HubInfo = await golemApi.GetHubInfoAsync();
+
+            while (true)
+            {
+                //get all peers
+                var peers = await golemApi.ListPeersAsync();
+
+                //synchronize peers with the knownPeers
+                foreach(var p in peers)
+                {
+                    if (!knownPeers.Contains(p))
+                    {
+                        //add new workers to workerPool
+                        workerPool.Enqueue(new GolemWorker(this,p));
+                    }
+                }
+                //TODO: do we need to do sth with workers that are not in the hub anymore?
+
+                knownPeers = peers;
+
+                await Task.Delay(10 * 1000);//do this once per 10 seconds
+            }
+        }
+
+        private async Task TaskDispatcher()
+        {
+            //we need to distribute work from the queue
+            while (true)
+            {
+                while (taskQueue.Count > 0)
+                {
+                    //get number of available tasks (this can only increase from another thread, so should be fine)
+                    int taskQueueSize = taskQueue.Count;
+                    //get first available worker
+                    GolemWorker worker = null;
+                    if (workerPool.TryDequeue(out worker))
+                    {
+                        //get the number of tasks to process
+                        int taskCount = Math.Min(worker.TaskCapacity, taskQueueSize);
+                        for (int i = 0; i < taskCount; ++i)
+                        {
+                            CompilationTask task = null;
+                            if (taskQueue.TryDequeue(out task))
+                            {
+                                worker.AddTask(task);
+                            }
+                        }
+                        worker.Dispatch(golemApi,null,()=> { workerPool.Enqueue(worker); });
+                    }
+                }
+                await Task.Delay(1000);
+            }
         }
 
         private async Task TaskProcessor()
@@ -185,9 +257,9 @@ namespace GolemBuild
                         //create deployment
                         DeploymentSpec spec = new DeploymentSpec(EnvType.Hd, specImg, "compiler", new List<string>() { });
                         string depId = await golemApi.CreateDeploymentAsync(peers[myPeer].NodeId, spec);
-                        depId = depId.Replace("\"", "");//TODO: remove this! current bug fix
-                                                        //TODO: based on our needs we can also create a session ID, and simply wait for peers to grab deployed tasks from there
-                                                        //though I haven't checked that
+
+                        //TODO: based on our needs we can also create a session ID, and simply wait for peers to grab deployed tasks from there
+                        //though I haven't checked that
 
                         var results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new ExecCommand("golembuild.bat", new List<string>()) });
 
@@ -224,10 +296,6 @@ namespace GolemBuild
                     catch(Exception ex)
                     {
                         Console.WriteLine(ex.Message);
-                    }
-                    finally
-                    {
-                        System.Threading.Interlocked.Decrement(ref taskCount);
                     }
                 }
                 await Task.Delay(1000);

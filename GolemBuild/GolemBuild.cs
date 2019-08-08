@@ -364,14 +364,16 @@ namespace GolemBuild
 
                     Directory.CreateDirectory(Path.Combine(taskPath, Path.GetDirectoryName(srcPdb)));
 
-                    batch.WriteLine("copy \"" + srcPdb + "\" \"" + dstPdb + "\""); 
+                    //not needed
+                    //batch.WriteLine("copy \"" + srcPdb + "\" \"" + dstPdb + "\""); 
                 }
 
                 // Zip output folder
                 batch.WriteLine("powershell.exe -nologo -noprofile -command \"& { Add-Type -A 'System.IO.Compression.FileSystem'; [IO.Compression.ZipFile]::CreateFromDirectory('output', 'output.zip'); }\"");
 
-                // Kill mspdbsrv.exe because it likes to bug out and stay open...
-                batch.WriteLine("taskkill /f /im mspdbsrv.exe");
+                // stop the service
+                batch.WriteLine("mspdbsrv.exe -stop");
+                batch.WriteLine("exit 0");//assume no error
 
                 batch.Close();
                 //batch.WriteLine("exit");

@@ -52,6 +52,7 @@
     <Compile Include="DataPackage.cs" />
     <Compile Include="GolemBuild.cs" />
     <Compile Include="GolemBuildService.cs" />
+    <Compile Include="GolemWorker.cs" />
     <Compile Include="IBuildService.cs" />
   </ItemGroup>
   <ItemGroup>
