@@ -169,7 +169,7 @@ namespace TestApp
                         output.Close();
                     }
                 }
-                catch(OperationCanceledException ex)
+                catch(OperationCanceledException)
                 {
                     listener.Stop();
                     return;

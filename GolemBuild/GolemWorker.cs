@@ -26,7 +26,7 @@ namespace GolemBuild
         {
             get
             {
-                return Hardware.CoreNumber;
+                return 4;// Hardware.CoreNumber; //TODO: wait for new hub to support this
             }
         }
 

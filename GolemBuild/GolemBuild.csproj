@@ -1,72 +1,19 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{780BE435-229C-4890-82A3-322509B16C73}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>GolemBuild</RootNamespace>
     <AssemblyName>GolemBuild</AssemblyName>
-    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
-    <Deterministic>true</Deterministic>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
+    <TargetFrameworks>net461;net472</TargetFrameworks>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="ICSharpCode.SharpZipLib, Version=1.1.0.145, Culture=neutral, PublicKeyToken=1b03e6acf1164f73, processorArchitecture=MSIL">
-      <HintPath>..\packages\SharpZipLib.1.1.0\lib\net45\ICSharpCode.SharpZipLib.dll</HintPath>
-    </Reference>
+    <PackageReference Include="SharpZipLib" Version="1.1.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\gurestapi\src\gu_rest_api\GURestApi.csproj" />
+  </ItemGroup>
+  <ItemGroup>
     <Reference Include="Microsoft.Build" />
     <Reference Include="Microsoft.Build.Utilities.v4.0" />
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.IO.Compression" />
-    <Reference Include="System.IO.Compression.FileSystem" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Net.Http" />
-    <Reference Include="System.Xml" />
   </ItemGroup>
-  <ItemGroup>
-    <Compile Include="CompilationTask.cs" />
-    <Compile Include="DataPackage.cs" />
-    <Compile Include="GolemBuild.cs" />
-    <Compile Include="GolemBuildService.cs" />
-    <Compile Include="GolemWorker.cs" />
-    <Compile Include="IBuildService.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="GolemBuild.snk" />
-    <None Include="packages.config" />
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\gurestapi\src\gu_rest_api\GURestApi.csproj">
-      <Project>{7a4c11a6-0c11-4a05-9068-54349cad32fb}</Project>
-      <Name>GURestApi</Name>
-    </ProjectReference>
-  </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+
 </Project>

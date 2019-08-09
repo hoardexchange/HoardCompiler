@@ -89,7 +89,7 @@ namespace GolemBuild
                     }
 
                     OnMessage.Invoke("Waiting for external build...");
-                    if (!GolemBuildService.buildService.WaitTasks())
+                    if (!GolemBuildService.Instance.WaitTasks())
                     {
                         OnMessage.Invoke("- External Compilation failed -");
                         return false;
@@ -395,15 +395,14 @@ namespace GolemBuild
         {
             string projectPath = Path.GetDirectoryName(project.FullPath);
             string golemBuildPath = Path.Combine(projectPath, "GolemBuild");
-            GolemBuildService.buildService.BuildPath = golemBuildPath;
+            GolemBuildService.Instance.BuildPath = golemBuildPath;
 
-            GolemBuildService.buildService.compilationSuccessful = true;
+            GolemBuildService.Instance.compilationSuccessful = true;
 
             // Start building packaged tasks
-            GolemBuildService.buildService.Start();
             for (int i = 0; i < tasks.Count; i++)
             {
-                GolemBuildService.buildService.AddTask(tasks[i]);
+                GolemBuildService.Instance.AddTask(tasks[i]);
             }
             return true;
         }

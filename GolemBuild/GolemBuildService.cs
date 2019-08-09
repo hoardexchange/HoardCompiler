@@ -15,29 +15,66 @@ namespace GolemBuild
 {
     public class GolemBuildService : IBuildService
     {
-        public static class Configuration
+        public class Configuration
         {
-            public static string GolemHubUrl
+            public string GolemHubUrl
             {
                 get;
                 set;
             } = "http://10.30.10.121:6162";
 
 
-            public static int GolemServerPort
+            public int GolemServerPort
             {
                 get;
                 set;
             } = 6000;
+
+            public override bool Equals(object obj)
+            {
+                return base.Equals(obj as Configuration);
+            }
+
+            public bool Equals(Configuration input)
+            {
+                if (input == null)
+                    return false;
+
+                return
+                    (
+                        GolemHubUrl == input.GolemHubUrl ||
+                        (GolemHubUrl != null &&
+                        GolemHubUrl.Equals(input.GolemHubUrl))
+                    ) &&
+                    (
+                        GolemServerPort == input.GolemServerPort ||
+                        (GolemServerPort.Equals(input.GolemServerPort))
+                    );
+            }
+
+            public override int GetHashCode()
+            {
+                int hashCode = 41;
+                if (GolemHubUrl != null)
+                    hashCode = hashCode * 59 + GolemHubUrl.GetHashCode();
+                hashCode = hashCode * 59 + GolemServerPort.GetHashCode();
+                return hashCode;
+            }
         }
 
-        public static GolemBuildService buildService = null;
+        public static GolemBuildService Instance = null;
         public event EventHandler<BuildTaskStatusChangedArgs> BuildTaskStatusChanged;
 
         public string BuildPath = "";
         public bool compilationSuccessful = false;
+        public Configuration Options = new Configuration();
 
         public event Action<string> OnMessage;
+
+        public bool IsRunning
+        {
+            get { return mainLoop != null; }
+        }
 
         private Task hubInfoLoop = null;
         private Task mainLoop = null;
@@ -81,7 +118,7 @@ namespace GolemBuild
 
             myIP = output;
                         
-            buildService = this;
+            Instance = this;
         }
 
         internal string GetHttpDownloadUri(string fileName)
@@ -123,8 +160,8 @@ namespace GolemBuild
             if (mainLoop != null)
                 throw new Exception("Service is already running!");
 
-            golemApi = new PeerApi(Configuration.GolemHubUrl);
-            ServerPort = Configuration.GolemServerPort;
+            golemApi = new PeerApi(Options.GolemHubUrl);
+            ServerPort = Options.GolemServerPort;
 
             taskQueue = new ConcurrentQueue<CompilationTask>();
 
@@ -342,31 +379,31 @@ namespace GolemBuild
             try
             {
                 listener.Start();
+                while (true)
+                {
+                    try
+                    {
+                        //get the request
+                        HttpListenerContext context = await listener.GetContextAsync();
+                        _ = Task.Run(() => ProcessRequest(context)); // Discard is used so we don't get warnings about not using await...
+                    }
+                    catch (TaskCanceledException)
+                    {
+                        listener.Stop();
+                        //bail out
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        //TODO: do sth with this exception
+                        Console.WriteLine(ex.Message);
+                    }
+                }
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-
+                LogMessage(ex.Message);
             }
-            while (true)
-            {
-                try
-                {
-                    //get the request
-                    HttpListenerContext context = await listener.GetContextAsync();
-                    _ = Task.Run(() => ProcessRequest(context)); // Discard is used so we don't get warnings about not using await...
-                }
-                catch (TaskCanceledException ex)
-                {
-                    listener.Stop();
-                    //bail out
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    //TODO: do sth with this exception
-                    Console.WriteLine(ex.Message);
-                }
-            }            
         }
 
         private void ProcessRequest(HttpListenerContext context)
@@ -429,7 +466,7 @@ namespace GolemBuild
                     output.Close();
                 }
             }
-            catch (TaskCanceledException ex)
+            catch (TaskCanceledException)
             {
                 return;
             }

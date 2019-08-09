@@ -31,8 +31,10 @@ namespace GolemCompiler
             {
                 if (_pane!=null)
                 {
-                    ThreadHelper.JoinableTaskFactory.StartOnIdle(() =>
+                    ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                     {
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
                         _pane.OutputString(DateTime.Now.ToString() + ": " + message + Environment.NewLine);
                     });
                 }

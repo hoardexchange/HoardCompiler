@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.29020.237
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.271
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GolemCompilerVSIX", "GolemCompilerVSIX\GolemCompilerVSIX.csproj", "{260F87FB-5269-45CF-ADB7-2F619F6707C8}"
 EndProject
@@ -10,6 +10,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GolemBuild", "GolemBuild\GolemBuild.csproj", "{780BE435-229C-4890-82A3-322509B16C73}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestApp", "TestApp\TestApp.csproj", "{92911BF4-CE24-44F8-BA40-4A667C471CE2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GolemCompilerVSIX2017", "GolemCompilerVSIX2017\GolemCompilerVSIX2017.csproj", "{A0583977-A5C8-4CB0-AF05-372F7B1BE41A}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -33,6 +35,10 @@ Global
 		{92911BF4-CE24-44F8-BA40-4A667C471CE2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{92911BF4-CE24-44F8-BA40-4A667C471CE2}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{92911BF4-CE24-44F8-BA40-4A667C471CE2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A0583977-A5C8-4CB0-AF05-372F7B1BE41A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A0583977-A5C8-4CB0-AF05-372F7B1BE41A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A0583977-A5C8-4CB0-AF05-372F7B1BE41A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A0583977-A5C8-4CB0-AF05-372F7B1BE41A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

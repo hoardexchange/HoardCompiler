@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.Design;
 using System.Globalization;
 using EnvDTE;
-using GolemBuild;
+//using GolemBuild;
 //using Microsoft.VisualStudio.ProjectSystem;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -32,7 +32,6 @@ namespace GolemCompiler
         /// </summary>
         private readonly AsyncPackage package;
         private readonly DTE Dte;
-        private readonly Microsoft.VisualStudio.ProjectSystem.IProjectThreadingService projectService = null;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BuildCommand"/> class.
@@ -72,16 +71,6 @@ namespace GolemCompiler
                 menuItem = new MenuCommand(ProjItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
             }
-
-            var srv = ServiceProvider.GetService(typeof(Microsoft.VisualStudio.ComponentModelHost.SComponentModel)) as Microsoft.VisualStudio.ComponentModelHost.IComponentModel;
-            if (srv==null)
-            {
-                throw new Exception("Could not access ComponentModel!");
-            }
-            var psrv = srv.GetService<Microsoft.VisualStudio.ProjectSystem.IProjectServiceAccessor>().GetProjectService();
-            //TODO: check why it doesn't work!
-            /*var services = psrv.Services;
-            projectService = psrv.Services.ThreadingPolicy;*/
         }
 
         /// <summary>
@@ -117,7 +106,7 @@ namespace GolemCompiler
 
         private void ProjItemCallback(object sender, EventArgs e)
         {
-            //projectService.VerifyOnUIThread();
+            ThreadHelper.ThrowIfNotOnUIThread();
 
             List<VCProject> projects = new List<VCProject>();
 
@@ -140,7 +129,7 @@ namespace GolemCompiler
         
         private void SolutionItemCallback(object sender, EventArgs e)
         {
-            //projectService.VerifyOnUIThread();
+            ThreadHelper.ThrowIfNotOnUIThread();
 
             if (null == Dte.Solution)
                 return;
@@ -199,18 +188,18 @@ namespace GolemCompiler
         /// <param name="projects"></param>
         private void RequestBuildProjects(EnvDTE80.SolutionConfiguration2 config, List<VCProject> projects)
         {
-            //projectService.VerifyOnUIThread();
-
+            //ThreadHelper.ThrowIfNotOnUIThread();
             OptionPageGrid page = (OptionPageGrid)package.GetDialogPage(typeof(OptionPageGrid));
-            GolemBuildService.Configuration options = new GolemBuildService.Configuration() { GolemHubUrl = page.OptionGolemHubUrl, GolemServerPort = page.OptionGolemServerPort };
+            //GolemBuildService.Configuration options = new GolemBuildService.Configuration() { GolemHubUrl = page.OptionGolemHubUrl, GolemServerPort = page.OptionGolemServerPort };
 
             var task = System.Threading.Tasks.Task.Run(() =>
-            {   
-                if (GolemBuildService.Instance.Options != options || !GolemBuildService.Instance.IsRunning)
+            {
+                /*if (GolemBuildService.Instance.Options != options || !GolemBuildService.Instance.IsRunning)
                 {
                     GolemBuildService.Instance.Stop();
                     GolemBuildService.Instance.Options = options;
                     GolemBuildService.Instance.Start();
+
                 }
 
                 GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
@@ -254,7 +243,7 @@ namespace GolemCompiler
                     title,
                     OLEMSGICON.OLEMSGICON_INFO,
                     OLEMSGBUTTON.OLEMSGBUTTON_OK,
-                    OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+                    OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);*/
             });            
         }
     }

@@ -86,7 +86,7 @@ namespace GolemCompiler
             buildService.OnMessage += (str) =>
             {
                 Logger.Log(str + "\n");
-            };            
+            };        
 
             //Add build commands
             await BuildCommand.InitializeAsync(this);
