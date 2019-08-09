@@ -9,13 +9,28 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using GURestApi.Api;
-using GURestApi.Client;
 using GURestApi.Model;
 
 namespace GolemBuild
 {
     public class GolemBuildService : IBuildService
     {
+        public static class Configuration
+        {
+            public static string GolemHubUrl
+            {
+                get;
+                set;
+            } = "http://10.30.10.121:6162";
+
+
+            public static int GolemServerPort
+            {
+                get;
+                set;
+            } = 6000;
+        }
+
         public static GolemBuildService buildService = null;
         public event EventHandler<BuildTaskStatusChangedArgs> BuildTaskStatusChanged;
 
@@ -24,6 +39,7 @@ namespace GolemBuild
 
         public event Action<string> OnMessage;
 
+        private Task hubInfoLoop = null;
         private Task mainLoop = null;
         private Task requestLoop = null;
         private System.Threading.CancellationTokenSource cancellationSource = null;
@@ -37,18 +53,16 @@ namespace GolemBuild
         private List<PeerInfo> knownPeers = new List<PeerInfo>();
         private ConcurrentQueue<GolemWorker> workerPool = new ConcurrentQueue<GolemWorker>();
 
-        public GolemBuildService(string hubUrl = "http://10.30.10.121:6162", int serverPort = 6000)//current default
+        public GolemBuildService()
         {
             // TODO: Configure API key authorization: serviceToken
             //Configuration.Default.AddApiKey("X-GU-APIKEY", "YOUR_API_KEY");
             // Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
             // Configuration.Default.AddApiKeyPrefix("X-GU-APIKEY", "Bearer");
             // TODO: Configure API key authorization: systemName
-            Configuration.Default.AddApiKey("X-GU-APPNAME", "GolemCompiler");
+            GURestApi.Client.Configuration.Default.AddApiKey("X-GU-APPNAME", "GolemCompiler");
             // Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-            Configuration.Default.AddApiKeyPrefix("X-GU-APPNAME", "Bearer");
-
-            ServerPort = serverPort;
+            GURestApi.Client.Configuration.Default.AddApiKeyPrefix("X-GU-APPNAME", "Bearer");
 
             string output = "";
             foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
@@ -66,8 +80,7 @@ namespace GolemBuild
             }
 
             myIP = output;
-
-            golemApi = new PeerApi(hubUrl);
+                        
             buildService = this;
         }
 
@@ -98,7 +111,7 @@ namespace GolemBuild
 
         public bool WaitTasks()
         {
-            while(GetTaskCount() > 0)
+            while(!taskQueue.IsEmpty)
             {
                 System.Threading.Thread.Sleep(100);
             }
@@ -110,9 +123,15 @@ namespace GolemBuild
             if (mainLoop != null)
                 throw new Exception("Service is already running!");
 
+            golemApi = new PeerApi(Configuration.GolemHubUrl);
+            ServerPort = Configuration.GolemServerPort;
+
             taskQueue = new ConcurrentQueue<CompilationTask>();
 
             cancellationSource = new System.Threading.CancellationTokenSource();
+
+            //run the hub info loop (peer discovery)
+            hubInfoLoop = Task.Run(GolemHubQueryTask, cancellationSource.Token);
 
             //run main task loop
             mainLoop = Task.Run(TaskProcessor, cancellationSource.Token);
@@ -127,18 +146,23 @@ namespace GolemBuild
         {
             if (cancellationSource!=null)
             {
-                cancellationSource.Cancel();//this will throw exception
+                cancellationSource.Cancel();//this will throw
                 try
                 {
-                    mainLoop.Wait();
+                    hubInfoLoop.Wait();
+                    mainLoop.Wait();                    
+                    requestLoop.Wait();
                 }
                 catch(TaskCanceledException)
                 {
                 }
             }
             cancellationSource = null;
+
+            hubInfoLoop = null;
             mainLoop = null;
-            
+            requestLoop = null;
+
             return true;
         }
 
@@ -146,6 +170,7 @@ namespace GolemBuild
         {
             //first try to connect to the hub
             HubInfo = await golemApi.GetHubInfoAsync();
+            LogMessage($"Connected to Golem Hub\n{HubInfo.ToJson()}");
 
             while (true)
             {
@@ -157,11 +182,11 @@ namespace GolemBuild
                 {
                     if (!knownPeers.Contains(p))
                     {
-                        //add new workers to workerPool
-                        workerPool.Enqueue(new GolemWorker(this,p));
+                        //add new workers to workerPool                        
+                        workerPool.Enqueue(new GolemWorker(this, p, await golemApi.GetPeerHardwareAsync(p.NodeId)));
                     }
                 }
-                //TODO: do we need to do sth with workers that are not in the hub anymore?
+                //TODO: do we need to do sth with workers that are not in the hub anymore? or will they die automatically?
 
                 knownPeers = peers;
 
@@ -213,8 +238,8 @@ namespace GolemBuild
                     var peers = await golemApi.ListPeersAsync();
 
                     //TODO: we want each task to be distributed to a different peer
-                    //not that number of peers might change in time
-                    //we might first grab all tasks and then grab all peers and than distribute tasks for those that are not occupied
+                    //note that number of peers might change in time
+                    //we might first grab all tasks and then grab all peers and then distribute tasks for those that are not occupied
 
                     int myPeer = -1;
 
@@ -270,25 +295,24 @@ namespace GolemBuild
                     {
                         if (line.Contains(" error") || line.Contains("fatal error"))
                         {
-                            OnMessage?.Invoke("[ERROR] " + fileName + ": " + line);
-                            error = true;
+                                LogMessage("[ERROR] " + fileName + ": " + line);error = true;
                         }
                         else if (line.Contains("warning"))
                         {
-                            OnMessage?.Invoke("[WARNING] " + fileName + ": " + line);
+                                LogMessage("[WARNING] " + fileName + ": " + line);
                         }
                     }
 
                     if (!error)
                     {
-                        OnMessage?.Invoke("[SUCCESS] " + fileName);
+                            LogMessage("[SUCCESS] " + fileName);
 
-                        // Upload output.zip
-                        results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new UploadFileCommand("http://" + myIP + ":" + ServerPort + "/requestID/" + fileName, "output.zip") });
+                            // Upload output.zip
+                            results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new UploadFileCommand("http://" + myIP + ":" + ServerPort + "/requestID/" + fileName, "output.zip") });
                     }
                     else
                     {
-                        compilationSuccessful = false;
+                            compilationSuccessful = false;
                     }
 
                         //TODO: when it is done either end deployment or add more tasks...

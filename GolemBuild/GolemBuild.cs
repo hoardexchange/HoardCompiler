@@ -400,6 +400,7 @@ namespace GolemBuild
             GolemBuildService.buildService.compilationSuccessful = true;
 
             // Start building packaged tasks
+            GolemBuildService.buildService.Start();
             for (int i = 0; i < tasks.Count; i++)
             {
                 GolemBuildService.buildService.AddTask(tasks[i]);

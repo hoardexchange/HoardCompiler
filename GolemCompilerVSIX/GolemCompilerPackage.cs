@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Threading;
 using EnvDTE;
+using GolemBuild;
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
@@ -20,9 +21,18 @@ namespace GolemCompiler
         [Description("Address of the Golem Hub")]
         public string OptionGolemHubUrl
         {
-            get;
-            set;
-        } = "localhost:8080";
+            get { return GolemBuildService.Configuration.GolemHubUrl; }
+            set { GolemBuildService.Configuration.GolemHubUrl = value; }
+        }
+
+        [Category("GolemCompiler")]
+        [DisplayName("Local Server port")]
+        [Description("Port of local http server that communicates with Golem Hub")]
+        public int OptionGolemServerPort
+        {
+            get { return GolemBuildService.Configuration.GolemServerPort; }
+            set { GolemBuildService.Configuration.GolemServerPort = value; }
+        }
 
         [Category("GolemCompiler")]
         [DisplayName("Create unity files")]
@@ -75,12 +85,13 @@ namespace GolemCompiler
         {
             await base.InitializeAsync(cancellationToken, progress);
 
-            buildService = new GolemBuild.GolemBuildService("http://10.30.10.121:6162");
+            OptionPageGrid page = (OptionPageGrid)GetDialogPage(typeof(OptionPageGrid));
+
+            buildService = new GolemBuild.GolemBuildService();
             buildService.OnMessage += (str) =>
             {
                 Logger.Log(str + "\n");
-            };
-            buildService.Start();
+            };            
 
             //Add build commands
             BuildCommand.Initialize(this);

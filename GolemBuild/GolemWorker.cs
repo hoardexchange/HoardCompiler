@@ -15,6 +15,8 @@ namespace GolemBuild
     {
         public PeerInfo Peer { get; set; }
 
+        private PeerHardware Hardware { get; set; }
+
         private List<CompilationTask> taskList = new List<CompilationTask>();
         private DeploymentSpec deployment = null;
         private string deploymentID = null;
@@ -24,14 +26,15 @@ namespace GolemBuild
         {
             get
             {
-                return 4;//TODO: use value from PeerInfo
+                return Hardware.CoreNumber;
             }
         }
 
-        public GolemWorker(GolemBuildService service, PeerInfo peer)
+        public GolemWorker(GolemBuildService service, PeerInfo peer, PeerHardware hardware)
         {
             Service = service;
             Peer = peer;
+            Hardware = hardware;
         }
 
         public void AddTask(CompilationTask task)
