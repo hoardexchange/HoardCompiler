@@ -80,8 +80,6 @@ namespace GolemCompiler
         {
             await base.InitializeAsync(cancellationToken, progress);
 
-            OptionPageGrid page = (OptionPageGrid)GetDialogPage(typeof(OptionPageGrid));
-
             var buildService = new GolemBuild.GolemBuildService();
             buildService.OnMessage += (str) =>
             {
