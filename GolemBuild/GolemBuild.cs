@@ -203,32 +203,6 @@ namespace GolemBuild
                 string taskPath = Path.Combine(golemBuildPath, Path.GetFileNameWithoutExtension(tasks[i].FilePath));
                 Directory.CreateDirectory(taskPath);
 
-                // Package executables and necessary dlls
-                string compilerDir = Path.GetDirectoryName(tasks[i].Compiler);
-                foreach (string file in Directory.EnumerateFiles(compilerDir))
-                {
-                    if (Path.GetExtension(file) == ".exe" || Path.GetExtension(file) == ".dll")
-                    {
-                        string dstFile = Path.Combine(taskPath, Path.GetFileName(file));
-                        if (!File.Exists(dstFile))
-                            File.Copy(file, dstFile);
-                    }
-                }
-
-                foreach (string dir in Directory.EnumerateDirectories(compilerDir))
-                {
-                    if (Directory.GetFiles(dir).Length > 0)
-                    {
-                        string taskSubDir = Path.Combine(taskPath, Path.GetFileName(dir));
-                        Directory.CreateDirectory(taskSubDir);
-
-                        foreach (string file in Directory.EnumerateFiles(dir))
-                        {
-                            File.Copy(file, Path.Combine(taskSubDir, Path.GetFileName(file)));
-                        }
-                    }
-                }
-
                 // Package precompiled header if used
                 if (tasks[i].PrecompiledHeader.Length > 0)
                 {
@@ -1129,7 +1103,7 @@ namespace GolemBuild
                         CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
                         string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ObjectFileName", "AssemblerListingLocation" }, item.Metadata);//FS or MP?
 
-                        pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", item.GetMetadataValue("ProgramDataBaseFileName"), item.GetMetadataValue("PrecompiledHeaderOutputFile"), includePaths, includes, localIncludes));
+                        pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", projectPath, item.GetMetadataValue("ProgramDataBaseFileName"), item.GetMetadataValue("PrecompiledHeaderOutputFile"), includePaths, includes, localIncludes));
                     }
                 }
             }
@@ -1217,7 +1191,7 @@ namespace GolemBuild
                 }
                 string pdb = item.GetMetadataValue("ProgramDataBaseFileName");
 
-                tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, pch, pdb, "", includePaths, includes, localIncludes));
+                tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, pch, pdb, "", projectPath, includePaths, includes, localIncludes));
             }
 
             return;

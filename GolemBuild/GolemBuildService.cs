@@ -10,6 +10,8 @@ using System.Security.Cryptography;
 using System.Threading.Tasks;
 using GURestApi.Api;
 using GURestApi.Model;
+using ICSharpCode.SharpZipLib.GZip;
+using ICSharpCode.SharpZipLib.Tar;
 
 namespace GolemBuild
 {
@@ -79,6 +81,7 @@ namespace GolemBuild
         private Task hubInfoLoop = null;
         private Task mainLoop = null;
         private Task requestLoop = null;
+        private Task hubQuery = null;
         private System.Threading.CancellationTokenSource cancellationSource = null;
         private ConcurrentQueue<CompilationTask> taskQueue = null;
         private int ServerPort = 6000;
@@ -123,7 +126,7 @@ namespace GolemBuild
 
         internal string GetHttpDownloadUri(string fileName)
         {
-            return "http://" + myIP + ":" + ServerPort + "/download/" + fileName;
+            return "http://" + myIP + ":" + ServerPort + "/requestID/tasks/" + fileName;
         }
 
         internal string GetHttpUploadUri(string fileName)
@@ -171,7 +174,7 @@ namespace GolemBuild
             hubInfoLoop = Task.Run(GolemHubQueryTask, cancellationSource.Token);
 
             //run main task loop
-            mainLoop = Task.Run(TaskProcessor, cancellationSource.Token);
+            mainLoop = Task.Run(TaskDispatcher, cancellationSource.Token);
 
             //run the http server
             requestLoop = Task.Run(RequestServer, cancellationSource.Token);
@@ -244,6 +247,8 @@ namespace GolemBuild
                     GolemWorker worker = null;
                     if (workerPool.TryDequeue(out worker))
                     {
+                        List<string> compilersUsed = new List<string>();
+
                         //get the number of tasks to process
                         int taskCount = Math.Min(worker.TaskCapacity, taskQueueSize);
                         for (int i = 0; i < taskCount; ++i)
@@ -251,10 +256,18 @@ namespace GolemBuild
                             CompilationTask task = null;
                             if (taskQueue.TryDequeue(out task))
                             {
+                                if (!compilersUsed.Contains(task.Compiler))
+                                    compilersUsed.Add(task.Compiler);
+
                                 worker.AddTask(task);
                             }
                         }
-                        worker.Dispatch(golemApi,null,()=> { workerPool.Enqueue(worker); });
+
+                        string hash = GolemCache.GetCompilerPackageHash(compilersUsed);
+                        DeploymentSpecImage specImg = new DeploymentSpecImage("SHA1:" + hash, "http://" + myIP + ":" + ServerPort + "/requestID/compiler/" + hash);
+                        //create deployment
+                        DeploymentSpec spec = new DeploymentSpec(EnvType.Hd, specImg, "Compiler", new List<string>() { });
+                        worker.Dispatch(golemApi, spec, ()=> { workerPool.Enqueue(worker); });
                     }
                 }
                 await Task.Delay(1000);
@@ -441,7 +454,7 @@ namespace GolemBuild
 
                     //let's check ranges
                     long offset = 0;
-                    int size = -1;
+                    long size = -1;
                     foreach (string header in request.Headers.AllKeys)
                     {
                         if (header == "Range")
@@ -453,17 +466,61 @@ namespace GolemBuild
                         }
                     }
 
-                    //1. based on request.Url fetch the content data
-                    DataPackage data = GetDataPackage(request.Url, offset, size);
-                    //2. calculate some hash so provider nows if content has changed or not
-                    response.AddHeader("ETag", data.DataHash);
-                    response.ContentLength64 = data.DataStream.Length;
-                    //response.ContentType = "application/x-gzip";// - not needed
-                    //response.AddHeader("Accept-Ranges", "bytes");// - not needed?
-                    System.IO.Stream output = response.OutputStream;
-                    output.Write(data.DataStream, 0, data.DataStream.Length);
-                    // close the output stream.
-                    output.Close();
+                    // Are they requesting a CompilerPackage?
+                    if (request.RawUrl.StartsWith("/requestID/compiler/"))
+                    {
+                        string compilerHash = request.RawUrl.Replace("/requestID/compiler/", "");
+                        byte[] data;
+                        if (GolemCache.GetCompilerPackageData(compilerHash, out data))
+                        {
+                            response.AddHeader("ETag", "SHA1:" + compilerHash);
+
+                            if (size == -1)
+                            {
+                                size = data.Length;
+                            }
+
+                            response.ContentLength64 = size;
+
+                            Stream output = response.OutputStream;
+                            output.Write(data, (int)offset, (int)size);
+                            output.Close();
+                        }
+                    }
+                    // Or are they requesting a tasks package?
+                    else if (request.RawUrl.StartsWith("/requestID/tasks/"))
+                    {
+                        string tasksPackageHash = request.RawUrl.Replace("/requestID/tasks/", "");
+                        byte[] data;
+                        if (GolemCache.GetTasksPackage(tasksPackageHash, out data))
+                        {
+                            response.AddHeader("ETag", "SHA1:" + tasksPackageHash);
+
+                            if (size == -1)
+                            {
+                                size = data.Length;
+                            }
+
+                            response.ContentLength64 = size;
+
+                            Stream output = response.OutputStream;
+                            output.Write(data, (int)offset, (int)size);
+                            output.Close();
+                        }
+                    }
+                    /*{
+                        //1. based on request.Url fetch the content data
+                        DataPackage data = GetDataPackage(request.Url, offset, size);
+                        //2. calculate some hash so provider nows if content has changed or not
+                        response.AddHeader("ETag", data.DataHash);
+                        response.ContentLength64 = data.DataStream.Length;
+                        //response.ContentType = "application/x-gzip";// - not needed
+                        //response.AddHeader("Accept-Ranges", "bytes");// - not needed?
+                        System.IO.Stream output = response.OutputStream;
+                        output.Write(data.DataStream, 0, data.DataStream.Length);
+                        // close the output stream.
+                        output.Close();
+                    }*/
                 }
             }
             catch (TaskCanceledException)

@@ -15,11 +15,14 @@ namespace GolemBuild
         public string PrecompiledHeader { get; set; }
         public string PDB { get; set; }
         public string OutputPath { get; set; }
+        public string ProjectPath { get; set; }
         public List<string> IncludeDirs { get; set; }
         public List<string> Includes { get; set; }
         public List<string> LocalIncludes { get; set; }
 
-        public CompilationTask(string filePath, string compiler, string compilerArgs, string pch, string pdb, string outputPath, List<string> includeDirs, List<string> includes, List<string> localIncludes)
+        
+
+        public CompilationTask(string filePath, string compiler, string compilerArgs, string pch, string pdb, string outputPath, string projectPath, List<string> includeDirs, List<string> includes, List<string> localIncludes)
         {
             FilePath = filePath;
             Compiler = compiler;
@@ -27,6 +30,7 @@ namespace GolemBuild
             PrecompiledHeader = pch;
             PDB = pdb;
             OutputPath = outputPath;
+            ProjectPath = projectPath;
             IncludeDirs = includeDirs;
             Includes = includes;
             LocalIncludes = localIncludes;

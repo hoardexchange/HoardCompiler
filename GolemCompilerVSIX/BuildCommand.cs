@@ -217,7 +217,7 @@ namespace GolemCompiler
 
                 builder.OnMessage += (str) =>
                 {
-                    Logger.Log(str + "\n");
+                            Logger.Log(str);
                 };
 
                 int projectsSucceeded = 0;
