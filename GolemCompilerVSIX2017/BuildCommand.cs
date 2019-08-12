@@ -194,7 +194,7 @@ namespace GolemCompiler
             OptionPageGrid page = (OptionPageGrid)package.GetDialogPage(typeof(OptionPageGrid));
             GolemBuildService.Configuration options = new GolemBuildService.Configuration() { GolemHubUrl = page.OptionGolemHubUrl, GolemServerPort = page.OptionGolemServerPort };
 
-            var task = System.Threading.Tasks.Task.Run(() =>
+            var task = System.Threading.Tasks.Task.Run(async () =>
             {
                 if (GolemBuildService.Instance.Options != options || !GolemBuildService.Instance.IsRunning)
                 {
@@ -238,6 +238,8 @@ namespace GolemCompiler
                     message += builder.GetProjectInformation(p.ProjectFile);
                 }
                 string title = "BuildCommand";
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(package.DisposalToken);
 
                 VsShellUtilities.ShowMessageBox(
                     ServiceProvider,
