@@ -18,9 +18,6 @@ namespace GolemBuild
         const bool runDistributed = true; // TODO: Figure out if we are attached to a broker or not
         const bool runVerbose = false; // TODO: Add this as a checkbox somewhere
 
-        public event Action<string> OnError;
-        public event Action<string> OnMessage;
-
         private List<CompilationTask> pchTasks = new List<CompilationTask>();
         private List<CompilationTask> tasks = new List<CompilationTask>();
 
@@ -48,8 +45,7 @@ namespace GolemBuild
                 dir.Delete(true);
             }
 
-            //OnClear.Invoke();
-            OnMessage.Invoke("--- Compiling " + Path.GetFileNameWithoutExtension(projPath) + " " + configuration + " " + platform + " with GolemBuild ---");
+            Logger.LogMessage("--- Compiling " + Path.GetFileNameWithoutExtension(projPath) + " " + configuration + " " + platform + " with GolemBuild ---");
             
 
             if (project != null)
@@ -64,43 +60,43 @@ namespace GolemBuild
 
                 if (pchTasks.Count > 0)
                 {
-                    OnMessage.Invoke("Compiling Precompiled Headers...");
+                    Logger.LogMessage("Compiling Precompiled Headers...");
                     if (!BuildPCHTasks(project))
                     {
-                        OnMessage.Invoke("- Compilation failed -");
+                        Logger.LogError("- Compilation failed -");
                         return false;
                     }
                 }
 
                 if (runDistributed)
                 {
-                    OnMessage.Invoke("Packaging tasks...");
+                    Logger.LogMessage("Packaging tasks...");
                     if (!PackageTasks(project))
                     {
-                        OnMessage.Invoke("- Packaging failed -");
+                        Logger.LogError("- Packaging failed -");
                         return false;
                     }
 
-                    OnMessage.Invoke("Queueing tasks...");
+                    Logger.LogMessage("Queueing tasks...");
                     if (!QueuePackagedTasks(project))
                     {
-                        OnMessage.Invoke("- Queueing failed -");
+                        Logger.LogError("- Queueing failed -");
                         return false;
                     }
 
-                    OnMessage.Invoke("Waiting for external build...");
+                    Logger.LogMessage("Waiting for external build...");
                     if (!GolemBuildService.Instance.WaitTasks())
                     {
-                        OnMessage.Invoke("- External Compilation failed -");
+                        Logger.LogError("- External Compilation failed -");
                         return false;
                     }
                 }
                 else
                 {
-                    OnMessage.Invoke("Compiling...");
+                    Logger.LogMessage("Compiling...");
                     if (!BuildTasks(project))
                     {
-                        OnMessage.Invoke("- Compilation failed -");
+                        Logger.LogError("- Compilation failed -");
                         return false;
                     }
                 }
@@ -109,24 +105,24 @@ namespace GolemBuild
 
                 if (tasks.Count > 0)
                 {
-                    OnMessage.Invoke("Linking...");
+                    Logger.LogMessage("Linking...");
                     string outputFile;
                     if (!LinkProject(project, platform, out outputFile))
                     {
-                        OnMessage.Invoke("- Linking failed -");
+                        Logger.LogError("- Linking failed -");
                         return false;
                     }
 
-                    OnMessage.Invoke("-> " + outputFile);
+                    Logger.LogMessage("-> " + outputFile);
                 }
-                OnMessage.Invoke("- Compilation successful -");
+                Logger.LogMessage("- Compilation successful -");
 
                 CallPostBuildEvents(project);
 
                 return true;
             }
 
-            OnError?.Invoke("Could not load project " + projPath);
+            Logger.LogError("Could not load project " + projPath);
 
             return false;
         }
@@ -266,7 +262,7 @@ namespace GolemBuild
 
                     if (!foundFile && runVerbose)
                     {
-                        OnMessage.Invoke("Warning: Could not find include file " + include);
+                        Logger.LogMessage("Warning: Could not find include file " + include);
                     }
                 }
 
@@ -292,7 +288,7 @@ namespace GolemBuild
 
                         if (!foundFile && runVerbose)
                         {
-                            OnMessage.Invoke("Warning: Could not find local include file " + include);
+                            Logger.LogMessage("Warning: Could not find local include file " + include);
                         }
                     }
                 }
@@ -418,13 +414,13 @@ namespace GolemBuild
                         string output = e.Data;
                         if (output.Contains(" error") || output.Contains("fatal error"))
                         {
-                            OnMessage.Invoke("[ERROR] " + tasks[index].FilePath + ": " + output);
+                            Logger.LogError("[ERROR] " + tasks[index].FilePath + ": " + output);
                             hasErrored[index] = true;
                             compilationSucceeded = false;
                         }
                         else if (output.Contains("warning"))
                         {
-                            OnMessage.Invoke("[WARNING] " + tasks[index].FilePath + ": " + output);
+                            Logger.LogMessage("[WARNING] " + tasks[index].FilePath + ": " + output);
                         }
                     }
                 };
@@ -434,7 +430,7 @@ namespace GolemBuild
                     if (e.Data != null)
                     {
                         string output = e.Data;
-                        OnMessage.Invoke("[ERROR] " + tasks[index].FilePath + ": " + output);
+                        Logger.LogError("[ERROR] " + tasks[index].FilePath + ": " + output);
                         hasErrored[index] = true;
                         compilationSucceeded = false;
                     }
@@ -463,7 +459,7 @@ namespace GolemBuild
                             hasFinished[i] = true;
                             if (!hasErrored[i])
                             {
-                                OnMessage.Invoke("[SUCCESS] " + tasks[i].FilePath);
+                                Logger.LogMessage("[SUCCESS] " + tasks[i].FilePath);
 
                                 // Copy files from output folder to GolemBuild folder
                                 string taskPath = Path.Combine(golemBuildTasksPath, Path.GetFileNameWithoutExtension(tasks[i].FilePath));
@@ -499,7 +495,7 @@ namespace GolemBuild
             for (int i = 0; i < pchTasks.Count; ++i)
             {
                 var task = pchTasks[i];
-                OnMessage?.Invoke(string.Format("PCH Task [#{0}]: {1} {2} {3} {4}", i, task.Compiler, task.CompilerArgs, task.FilePath, task.OutputPath));
+                Logger.LogMessage(string.Format("PCH Task [#{0}]: {1} {2} {3} {4}", i, task.Compiler, task.CompilerArgs, task.FilePath, task.OutputPath));
             }
 
             Process[] processes = new Process[pchTasks.Count];
@@ -530,13 +526,13 @@ namespace GolemBuild
                         string output = e.Data;
                         if (output.Contains(" error") || output.Contains("fatal error"))
                         {
-                            OnMessage.Invoke("[ERROR] " + pchTasks[index].FilePath + ": " + output);
+                            Logger.LogError("[ERROR] " + pchTasks[index].FilePath + ": " + output);
                             hasErrored[index] = true;
                             compilationSucceeded = false;
                         }
                         else if (output.Contains("warning"))
                         {
-                            OnMessage.Invoke("[WARNING] " + pchTasks[index].FilePath + ": " + output);
+                            Logger.LogMessage("[WARNING] " + pchTasks[index].FilePath + ": " + output);
                         }
                     }
                 };
@@ -546,7 +542,7 @@ namespace GolemBuild
                     if (e.Data != null)
                     {
                         string output = e.Data;
-                        OnMessage.Invoke("[ERROR] " + pchTasks[index].FilePath + ": " + output);
+                        Logger.LogError("[ERROR] " + pchTasks[index].FilePath + ": " + output);
                         hasErrored[index] = true;
                         compilationSucceeded = false;
                     }
@@ -590,7 +586,7 @@ namespace GolemBuild
 
                             if (!hasErrored[i])
                             {
-                                OnMessage.Invoke("[SUCCESS] " + pchTasks[i].FilePath);
+                                Logger.LogMessage("[SUCCESS] " + pchTasks[i].FilePath);
                             }
                         }
                     }
@@ -616,7 +612,7 @@ namespace GolemBuild
             for (int i=0;i<tasks.Count;++i)
             {
                 var task = tasks[i];
-                OnMessage?.Invoke(string.Format("Task [#{0}]: {1} {2} {3} {4}", i, task.Compiler, task.CompilerArgs, task.FilePath, task.OutputPath));
+                Logger.LogMessage(string.Format("Task [#{0}]: {1} {2} {3} {4}", i, task.Compiler, task.CompilerArgs, task.FilePath, task.OutputPath));
             }
             Process[] processes = new Process[tasks.Count];
             bool[] hasFinished = new bool[tasks.Count];
@@ -645,13 +641,13 @@ namespace GolemBuild
                         string output = e.Data;
                         if (output.Contains(" error") || output.Contains("fatal error"))
                         {
-                            OnMessage.Invoke("[ERROR] " + tasks[index].FilePath + ": " + output);
+                            Logger.LogError("[ERROR] " + tasks[index].FilePath + ": " + output);
                             hasErrored[index] = true;
                             compilationSucceeded = false;
                         }
                         else if (output.Contains("warning"))
                         {
-                            OnMessage.Invoke("[WARNING] " + tasks[index].FilePath + ": " + output);
+                            Logger.LogMessage("[WARNING] " + tasks[index].FilePath + ": " + output);
                         }
                     }
                 };
@@ -661,7 +657,7 @@ namespace GolemBuild
                     if (e.Data != null)
                     {
                         string output = e.Data;
-                        OnMessage.Invoke("[ERROR] " + tasks[index].FilePath + ": " + output);
+                        Logger.LogError("[ERROR] " + tasks[index].FilePath + ": " + output);
                         hasErrored[index] = true;
                         compilationSucceeded = false;
                     }
@@ -702,7 +698,7 @@ namespace GolemBuild
 
                             if (!hasErrored[i])
                             {
-                                OnMessage.Invoke("[SUCCESS] " + tasks[i].FilePath);
+                                Logger.LogMessage("[SUCCESS] " + tasks[i].FilePath);
                             }
                         }
                     }
@@ -732,7 +728,7 @@ namespace GolemBuild
             string VCTargetsPath = project.GetPropertyValue("VCTargetsPathEffective");
             if (string.IsNullOrEmpty(VCTargetsPath))
             {
-                OnMessage.Invoke("Failed to evaluate VCTargetsPath variable on " + System.IO.Path.GetFileName(project.FullPath) + ". Is this a supported version of Visual Studio?");
+                Logger.LogError("Failed to evaluate VCTargetsPath variable on " + System.IO.Path.GetFileName(project.FullPath) + ". Is this a supported version of Visual Studio?");
                 return false;
             }
             string BuildDllPath = VCTargetsPath + (VCTargetsPath.Contains("v110") ? "Microsoft.Build.CPPTasks.Common.v110.dll" : "Microsoft.Build.CPPTasks.Common.dll");
@@ -787,7 +783,7 @@ namespace GolemBuild
                     string output = e.Data;
                     if (output.Contains(" error") || output.Contains("fatal error"))
                     {
-                        OnMessage.Invoke("[LINK ERROR] " + output);
+                        Logger.LogError("[LINK ERROR] " + output);
                         linkSuccessful = false;
                     }
                 }
@@ -798,7 +794,7 @@ namespace GolemBuild
                 if (e.Data != null)
                 {
                     string output = e.Data;
-                    OnMessage.Invoke("[LINK ERROR] " + output);
+                    Logger.LogError("[LINK ERROR] " + output);
                     linkSuccessful = false;
                 }
             };
@@ -824,7 +820,7 @@ namespace GolemBuild
                 linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(Path.GetFileName(task.FilePath), ".obj")) + "\"";
             }
 
-            OnMessage?.Invoke(string.Format("Linking Task: {0}", linkCommand));
+            Logger.LogMessage(string.Format("Linking Task: {0}", linkCommand));
 
             linkerProcess.StandardInput.WriteLine(linkCommand); // Execute task
             linkerProcess.StandardInput.WriteLine("exit");
@@ -832,12 +828,12 @@ namespace GolemBuild
 
             if (!exited)
             {
-                OnMessage.Invoke("[LINK ERROR]: Linker timed out after 30 seconds");
+                Logger.LogError("[LINK ERROR]: Linker timed out after 30 seconds");
             }
 
             if (linkSuccessful && importLibrary.Length > 0)
             {
-                OnMessage.Invoke("Import library: " + importLibrary);
+                Logger.LogMessage("Import library: " + importLibrary);
             }
 
             return linkSuccessful;
@@ -910,7 +906,7 @@ namespace GolemBuild
                 {
                     if (!localIncludes.Contains(fileName) && runVerbose)
                     {
-                        OnMessage.Invoke("Could not find include: " + fileName);
+                        Logger.LogMessage("Could not find include: " + fileName);
                     }
                     return;
                 }
@@ -1086,16 +1082,16 @@ namespace GolemBuild
 
                         FindIncludes(project, item.EvaluatedInclude, "", includePaths, ref includes, ref localIncludes);
 
-                        OnMessage.Invoke(">> " + item.EvaluatedInclude);
+                        Logger.LogMessage(">> " + item.EvaluatedInclude);
                         if (runVerbose)
                         {
-                            OnMessage.Invoke("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
-                            OnMessage.Invoke("   Found " + localIncludes.Count + " local includes: " + PrintIncludes(localIncludes));
+                            Logger.LogMessage("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
+                            Logger.LogMessage("   Found " + localIncludes.Count + " local includes: " + PrintIncludes(localIncludes));
                         }
                         else
                         {
-                            OnMessage.Invoke("   Found " + includes.Count + " includes");
-                            OnMessage.Invoke("   Found " + localIncludes.Count + " local includes");
+                            Logger.LogMessage("   Found " + includes.Count + " includes");
+                            Logger.LogMessage("   Found " + localIncludes.Count + " local includes");
                         }
                         
 
@@ -1139,16 +1135,16 @@ namespace GolemBuild
 
                 FindIncludes(project, item.EvaluatedInclude, "", includePaths, ref includes, ref localIncludes);
 
-                OnMessage.Invoke(">> " + item.EvaluatedInclude);
+                Logger.LogMessage(">> " + item.EvaluatedInclude);
                 if (runVerbose)
                 {
-                    OnMessage.Invoke("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
-                    OnMessage.Invoke("   Found " + localIncludes.Count + " local includes: " + PrintIncludes(localIncludes));
+                    Logger.LogMessage("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
+                    Logger.LogMessage("   Found " + localIncludes.Count + " local includes: " + PrintIncludes(localIncludes));
                 }
                 else
                 {
-                    OnMessage.Invoke("   Found " + includes.Count + " includes");
-                    OnMessage.Invoke("   Found " + localIncludes.Count + " local includes");
+                    Logger.LogMessage("   Found " + includes.Count + " includes");
+                    Logger.LogMessage("   Found " + localIncludes.Count + " local includes");
                 }
 
                 var Task = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
@@ -1243,7 +1239,7 @@ namespace GolemBuild
 
                     if (startCommand && line != "exit")
                     {
-                        OnMessage.Invoke(line);
+                        Logger.LogMessage(line);
                     }
                 }
             }
@@ -1297,7 +1293,7 @@ namespace GolemBuild
 
                     if (startCommand && line != "exit")
                     {
-                        OnMessage.Invoke(line);
+                        Logger.LogMessage(line);
                     }
                 }
             }
@@ -1351,7 +1347,7 @@ namespace GolemBuild
 
                     if (startCommand && line != "exit")
                     {
-                        OnMessage.Invoke(line);
+                        Logger.LogMessage(line);
                     }
                 }
             }
@@ -1406,7 +1402,7 @@ namespace GolemBuild
 
                 if (!foundCl)
                 {
-                    OnMessage.Invoke("Could not find CL.exe!");
+                    Logger.LogError("Could not find CL.exe!");
                 }
             }
 
@@ -1443,7 +1439,7 @@ namespace GolemBuild
 
                 if (!foundLink)
                 {
-                    OnMessage.Invoke("Could not find Link.exe!");
+                    Logger.LogError("Could not find Link.exe!");
                 }
             }
 
@@ -1480,7 +1476,7 @@ namespace GolemBuild
 
                 if (!foundLib)
                 {
-                    OnMessage.Invoke("Could not find lib.exe!");
+                    Logger.LogError("Could not find lib.exe!");
                 }
             }
 

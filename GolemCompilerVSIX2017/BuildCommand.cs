@@ -206,7 +206,11 @@ namespace GolemCompiler
 
                 GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
 
-                builder.OnMessage += (str) =>
+                GolemBuild.Logger.OnMessage += (str) =>
+                {
+                    Logger.Log(str + "\n");
+                };
+                GolemBuild.Logger.OnError += (str) =>
                 {
                     Logger.Log(str + "\n");
                 };
