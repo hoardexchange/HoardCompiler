@@ -196,7 +196,7 @@ namespace GolemCompiler
 
             var task = System.Threading.Tasks.Task.Run(async () =>
             {
-                if (GolemBuildService.Instance.Options != options || !GolemBuildService.Instance.IsRunning)
+                if (!GolemBuildService.Instance.Options.Equals(options) || !GolemBuildService.Instance.IsRunning)
                 {
                     GolemBuildService.Instance.Stop();
                     GolemBuildService.Instance.Options = options;
@@ -205,15 +205,6 @@ namespace GolemCompiler
                 }
 
                 GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
-
-                GolemBuild.Logger.OnMessage += (str) =>
-                {
-                    Logger.Log(str + "\n");
-                };
-                GolemBuild.Logger.OnError += (str) =>
-                {
-                    Logger.Log(str + "\n");
-                };
 
                 int projectsSucceeded = 0;
                 int projectsFailed = 0;

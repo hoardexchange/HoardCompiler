@@ -90,18 +90,18 @@ namespace GolemBuild
                 {
                     if (line.Contains(" error") || line.Contains("fatal error"))
                     {
-                        Service.LogMessage("[ERROR] " + packedFileName + ": " + line);
+                        Logger.LogError("[ERROR] " + packedFileName + ": " + line);
                         error = true;
                     }
                     else if (line.Contains("warning"))
                     {
-                        Service.LogMessage("[WARNING] " + packedFileName + ": " + line);
+                        Logger.LogMessage("[WARNING] " + packedFileName + ": " + line);
                     }
                 }
 
                 if (!error)
                 {
-                    Service.LogMessage("[SUCCESS] " + packedFileName);
+                    Logger.LogMessage("[SUCCESS] " + packedFileName);
 
                     // Upload output.zip
                     results = await golemApi.UpdateDeploymentAsync(Peer.NodeId, deploymentID, new List<Command>() {

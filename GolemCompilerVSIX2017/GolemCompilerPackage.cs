@@ -81,10 +81,14 @@ namespace GolemCompiler
             await base.InitializeAsync(cancellationToken, progress);
 
             var buildService = new GolemBuild.GolemBuildService();
-            buildService.OnMessage += (str) =>
+            GolemBuild.Logger.OnMessage += (str) =>
             {
                 Logger.Log(str + "\n");
-            };        
+            };
+            GolemBuild.Logger.OnError += (str) =>
+            {
+                Logger.Log(str + "\n");
+            };
 
             //Add build commands
             await BuildCommand.InitializeAsync(this);

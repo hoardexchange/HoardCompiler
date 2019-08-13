@@ -32,14 +32,13 @@ namespace GolemCompiler
         /// </summary>
         private readonly AsyncPackage package;
         private readonly DTE Dte;
-        private readonly Microsoft.VisualStudio.ProjectSystem.IProjectThreadingService projectService = null;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BuildCommand"/> class.
         /// Adds our command handlers for menu (commands must exist in the command table file)
         /// </summary>
         /// <param name="package">Owner package, not null.</param>
-        private BuildCommand(AsyncPackage package, DTE dte)
+        private BuildCommand(AsyncPackage package, DTE dte, OleMenuCommandService commandService)
         {
             if (package == null)
             {
@@ -49,7 +48,6 @@ namespace GolemCompiler
             this.package = package;
             Dte = dte;
 
-            OleMenuCommandService commandService = ServiceProvider.GetService(typeof(IMenuCommandService)) as OleMenuCommandService;
             if (commandService != null)
             {
                 //build command in the build menu
@@ -72,16 +70,6 @@ namespace GolemCompiler
                 menuItem = new MenuCommand(ProjItemCallback, menuCommandID);
                 commandService.AddCommand(menuItem);
             }
-
-            var srv = ServiceProvider.GetService(typeof(Microsoft.VisualStudio.ComponentModelHost.SComponentModel)) as Microsoft.VisualStudio.ComponentModelHost.IComponentModel;
-            if (srv==null)
-            {
-                throw new Exception("Could not access ComponentModel!");
-            }
-            var psrv = srv.GetService<Microsoft.VisualStudio.ProjectSystem.IProjectServiceAccessor>().GetProjectService();
-            //TODO: check why it doesn't work!
-            /*var services = psrv.Services;
-            projectService = psrv.Services.ThreadingPolicy;*/
         }
 
         /// <summary>
@@ -110,14 +98,18 @@ namespace GolemCompiler
         /// <param name="package">Owner package, not null.</param>
         public static async System.Threading.Tasks.Task InitializeAsync(AsyncPackage package)
         {
-            await package.JoinableTaskFactory.SwitchToMainThreadAsync();
+            // Switch to the main thread - the call to AddCommand in Command1's constructor requires
+            // the UI thread.
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(package.DisposalToken);
+
             var dte = await package.GetServiceAsync(typeof(DTE)) as DTE;
-            Instance = new BuildCommand(package, dte);
+            OleMenuCommandService commandService = await package.GetServiceAsync(typeof(IMenuCommandService)) as OleMenuCommandService;
+            Instance = new BuildCommand(package, dte, commandService);
         }
 
         private void ProjItemCallback(object sender, EventArgs e)
         {
-            //projectService.VerifyOnUIThread();
+            ThreadHelper.ThrowIfNotOnUIThread();
 
             List<VCProject> projects = new List<VCProject>();
 
@@ -140,7 +132,7 @@ namespace GolemCompiler
         
         private void SolutionItemCallback(object sender, EventArgs e)
         {
-            //projectService.VerifyOnUIThread();
+            ThreadHelper.ThrowIfNotOnUIThread();
 
             if (null == Dte.Solution)
                 return;
@@ -199,25 +191,28 @@ namespace GolemCompiler
         /// <param name="projects"></param>
         private void RequestBuildProjects(EnvDTE80.SolutionConfiguration2 config, List<VCProject> projects)
         {
-            //projectService.VerifyOnUIThread();
-
             OptionPageGrid page = (OptionPageGrid)package.GetDialogPage(typeof(OptionPageGrid));
             GolemBuildService.Configuration options = new GolemBuildService.Configuration() { GolemHubUrl = page.OptionGolemHubUrl, GolemServerPort = page.OptionGolemServerPort };
 
-            var task = System.Threading.Tasks.Task.Run(() =>
-            {   
-                if (GolemBuildService.Instance.Options != options || !GolemBuildService.Instance.IsRunning)
+            var task = System.Threading.Tasks.Task.Run(async () =>
+            {
+                if (!GolemBuildService.Instance.Options.Equals(options) || !GolemBuildService.Instance.IsRunning)
                 {
                     GolemBuildService.Instance.Stop();
                     GolemBuildService.Instance.Options = options;
                     GolemBuildService.Instance.Start();
+
                 }
 
                 GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
 
-                builder.OnMessage += (str) =>
+                GolemBuild.Logger.OnMessage += (str) =>
                 {
-                            Logger.Log(str);
+                    Logger.Log(str + "\n");
+                };
+                GolemBuild.Logger.OnError += (str) =>
+                {
+                    Logger.Log(str + "\n");
                 };
 
                 int projectsSucceeded = 0;
@@ -247,6 +242,8 @@ namespace GolemCompiler
                     message += builder.GetProjectInformation(p.ProjectFile);
                 }
                 string title = "BuildCommand";
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(package.DisposalToken);
 
                 VsShellUtilities.ShowMessageBox(
                     ServiceProvider,
