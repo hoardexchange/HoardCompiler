@@ -69,11 +69,13 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="index.html" />
+    <Content Include="License.txt">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <Content Include="Resources\BuildCommand.png" />
     <Content Include="Resources\GolemCompiler.png" />
     <Content Include="Resources\GolemCompilerPackage.ico" />
-    <Content Include="stylesheet.css" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="GolemCompilerPackage.resx">
