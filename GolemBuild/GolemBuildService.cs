@@ -209,9 +209,9 @@ namespace GolemBuild
             HubInfo = await golemApi.GetHubInfoAsync();
             Logger.LogMessage($"Connected to Golem Hub\n{HubInfo.ToJson()}");
 
-            try
+            while (!token.IsCancellationRequested)
             {
-                while (!token.IsCancellationRequested)
+                try
                 {
                     //get all peers
                     var peers = await golemApi.ListPeersAsync();
@@ -231,9 +231,14 @@ namespace GolemBuild
 
                     await Task.Delay(10 * 1000, token);//do this once per 10 seconds
                 }
-            }
-            catch(TaskCanceledException)
-            {
+                catch (TaskCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    //probably timed out request
+                    Logger.LogMessage(ex.Message);
+                }
             }
         }
 
