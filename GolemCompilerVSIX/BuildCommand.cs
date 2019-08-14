@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.Design;
+using System.Diagnostics;
 using System.Globalization;
 using EnvDTE;
 using GolemBuild;
@@ -196,6 +197,9 @@ namespace GolemCompiler
 
             var task = System.Threading.Tasks.Task.Run(async () =>
             {
+
+           
+                Stopwatch sw = Stopwatch.StartNew();
                 if (!GolemBuildService.Instance.Options.Equals(options) || !GolemBuildService.Instance.IsRunning)
                 {
                     GolemBuildService.Instance.Stop();
@@ -205,15 +209,6 @@ namespace GolemCompiler
                 }
 
                 GolemBuild.GolemBuild builder = new GolemBuild.GolemBuild();
-
-                GolemBuild.Logger.OnMessage += (str) =>
-                {
-                    Logger.Log(str + "\n");
-                };
-                GolemBuild.Logger.OnError += (str) =>
-                {
-                    Logger.Log(str + "\n");
-                };
 
                 int projectsSucceeded = 0;
                 int projectsFailed = 0;
@@ -232,8 +227,10 @@ namespace GolemCompiler
                     else
                         projectsFailed++;
                 }
+                sw.Stop();
 
-                Logger.Log("Succeeded: " + projectsSucceeded.ToString() + " Failed: " + projectsFailed.ToString() + "\n");
+                Logger.Log("Succeeded: " + projectsSucceeded.ToString() + " Failed: " + projectsFailed.ToString());
+                Logger.Log("Build took: " + sw.Elapsed.ToString());
 
                 string message = string.Format(CultureInfo.CurrentCulture, "Found {0} projects to build", projects.Count);
                 foreach (VCProject p in projects)

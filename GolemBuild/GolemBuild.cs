@@ -70,12 +70,12 @@ namespace GolemBuild
 
                 if (runDistributed)
                 {
-                    Logger.LogMessage("Packaging tasks...");
+                    /*Logger.LogMessage("Packaging tasks...");
                     if (!PackageTasks(project))
                     {
                         Logger.LogError("- Packaging failed -");
                         return false;
-                    }
+                    }*/
 
                     Logger.LogMessage("Queueing tasks...");
                     if (!QueuePackagedTasks(project))
@@ -1154,7 +1154,7 @@ namespace GolemBuild
 
                 if (runDistributed)
                 {
-                    args = GenerateTaskCommandLine(Task, new string[] { "ObjectFileName", "AssemblerListingLocation", "ProgramDataBaseFileName" }, item.Metadata);//FS or MP?
+                    args = GenerateTaskCommandLine(Task, new string[] { "ObjectFileName", "AssemblerListingLocation", "ProgramDataBaseFileName", "AdditionalIncludeDirectories" }, item.Metadata);//FS or MP?
                 }
                 else
                 {

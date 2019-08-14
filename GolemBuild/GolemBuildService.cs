@@ -90,6 +90,8 @@ namespace GolemBuild
         private List<PeerInfo> knownPeers = new List<PeerInfo>();
         private ConcurrentQueue<GolemWorker> workerPool = new ConcurrentQueue<GolemWorker>();
 
+        private int runningWorkers = 0;
+
         public GolemBuildService()
         {
             // TODO: Configure API key authorization: serviceToken
@@ -128,7 +130,7 @@ namespace GolemBuild
 
         internal string GetHttpUploadUri(string fileName)
         {
-            return "http://" + myIP + ":" + ServerPort + "/upload/" + fileName;
+            return "http://" + myIP + ":" + ServerPort + "/requestID/upload/" + fileName;
         }
 
         public void AddTask(CompilationTask task)
@@ -143,10 +145,13 @@ namespace GolemBuild
 
         public bool WaitTasks()
         {
-            while(!taskQueue.IsEmpty)
+            while(!taskQueue.IsEmpty || runningWorkers > 0)
             {
                 System.Threading.Thread.Sleep(100);
             }
+
+            GolemCache.Reset();
+
             return compilationSuccessful;
         }
 
@@ -257,6 +262,11 @@ namespace GolemBuild
                         GolemWorker worker = null;
                         if (workerPool.TryDequeue(out worker))
                         {
+                            System.Threading.Interlocked.Increment(ref runningWorkers);
+                            Logger.LogMessage("Worker " + worker.Peer.NodeId + " started");
+
+                            worker.ClearTasks();
+
                             List<string> compilersUsed = new List<string>();
 
                             //get the number of tasks to process
@@ -277,7 +287,12 @@ namespace GolemBuild
                             DeploymentSpecImage specImg = new DeploymentSpecImage("SHA1:" + hash, "http://" + myIP + ":" + ServerPort + "/requestID/compiler/" + hash);
                             //create deployment
                             DeploymentSpec spec = new DeploymentSpec(EnvType.Hd, specImg, "Compiler", new List<string>() { });
-                            worker.Dispatch(golemApi, spec, () => { workerPool.Enqueue(worker); });
+                            worker.Dispatch(golemApi, spec, () => 
+                            {
+                                workerPool.Enqueue(worker);
+                                Logger.LogMessage("Worker " + worker.Peer.NodeId + " finished");
+                                System.Threading.Interlocked.Decrement(ref runningWorkers);
+                            });
                         }
                     }
                     await Task.Delay(1000, token);
@@ -285,109 +300,6 @@ namespace GolemBuild
             }
             catch(TaskCanceledException)
             {
-            }
-        }
-
-        private async Task TaskProcessor()
-        {
-            //first try to connect to the hub
-            HubInfo = await golemApi.GetHubInfoAsync();
-            Logger.LogMessage($"Connected to Golem Hub\n{HubInfo.ToJson()}");
-
-            while (true)
-            {
-                CompilationTask task = null;
-                if (taskQueue.TryDequeue(out task))
-                {
-                    var peers = await golemApi.ListPeersAsync();
-
-                    //TODO: we want each task to be distributed to a different peer
-                    //note that number of peers might change in time
-                    //we might first grab all tasks and then grab all peers and then distribute tasks for those that are not occupied
-
-                    int myPeer = -1;
-
-                    const bool useOwnProvider = true;
-
-                    if (useOwnProvider)
-                    {
-                        for (int i = 0; i < peers.Count; i++)
-                        {
-                            if (peers[i].PeerAddr.Contains(myIP))
-                            {
-                                myPeer = i;
-                                break;
-                            }
-                        }
-
-                        if (myPeer == -1)
-                        {
-                            return;
-                        }
-                    }
-                    else
-                    {
-                        myPeer = 0; // Just use first one for now, using more providers is a TODO
-                    }
-
-                    try
-                    {
-                        //1. Create deployment
-                        string fileName = Path.GetFileNameWithoutExtension(task.FilePath);
-                        string tarPath = Path.Combine(GolemBuild.golemBuildTasksPath, fileName + ".tar.gz");
-
-                        string hash = "SHA1:";
-                        byte[] dataStream = File.ReadAllBytes(tarPath);
-                        using (var cryptoProvider = new SHA1CryptoServiceProvider())
-                        {
-                            hash += BitConverter.ToString(cryptoProvider.ComputeHash(dataStream)).Replace("-", string.Empty).ToLower();
-                        }
-
-                        DeploymentSpecImage specImg = new DeploymentSpecImage(hash, "http://" + myIP + ":" + ServerPort + "/requestID/" + fileName);
-                        //create deployment
-                        DeploymentSpec spec = new DeploymentSpec(EnvType.Hd, specImg, "compiler", new List<string>() { });
-                        string depId = await golemApi.CreateDeploymentAsync(peers[myPeer].NodeId, spec);
-
-                        //TODO: based on our needs we can also create a session ID, and simply wait for peers to grab deployed tasks from there
-                        //though I haven't checked that
-
-                        var results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new ExecCommand("golembuild.bat", new List<string>()) });
-
-                    bool error = false;
-                    string[] lines = results[0].Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-                    foreach(string line in lines)
-                    {
-                        if (line.Contains(" error") || line.Contains("fatal error"))
-                        {
-                                Logger.LogError("[ERROR] " + fileName + ": " + line);error = true;
-                        }
-                        else if (line.Contains("warning"))
-                        {
-                                Logger.LogMessage("[WARNING] " + fileName + ": " + line);
-                        }
-                    }
-
-                    if (!error)
-                    {
-                            Logger.LogMessage("[SUCCESS] " + fileName);
-
-                            // Upload output.zip
-                            results = await golemApi.UpdateDeploymentAsync(peers[myPeer].NodeId, depId, new List<Command>() { new UploadFileCommand("http://" + myIP + ":" + ServerPort + "/requestID/" + fileName, "output.zip") });
-                    }
-                    else
-                    {
-                            compilationSuccessful = false;
-                    }
-
-                        //TODO: when it is done either end deployment or add more tasks...
-                        golemApi.DropDeployment(peers[myPeer].NodeId, depId);
-                    }
-                    catch(Exception ex)
-                    {
-                        Console.WriteLine(ex.Message);
-                    }
-                }
-                await Task.Delay(1000);
             }
         }
     }
