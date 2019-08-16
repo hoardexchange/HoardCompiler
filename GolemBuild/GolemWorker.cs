@@ -4,6 +4,7 @@ using ICSharpCode.SharpZipLib.GZip;
 using ICSharpCode.SharpZipLib.Tar;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -86,7 +87,7 @@ namespace GolemBuild
                 }
 
                 //1. Take all input files and includes and package them into one TAR package + notify HttpServer about that file
-                string packedFileName = PackFiles(taskList);
+                string packedFileName = PackFilesPreProcessed(taskList);
 
                 //2. Create command to compile those source files -> cl.exe ....
                 ExecCommand compileCmd = GenerateCompileCommand(packedFileName, taskList);
@@ -168,7 +169,6 @@ namespace GolemBuild
             byte[] package;
             using (var memoryStream = new MemoryStream())
             {
-                //using (var gzoStream = new GZipOutputStream(memoryStream))
                 using (var archive = TarArchive.CreateOutputTarArchive(memoryStream))
                 {
                     List<string> addedEntries = new List<string>();
@@ -190,11 +190,11 @@ namespace GolemBuild
                         // Package sourcefiles
                         // not needed since this file is already in the task.Includes
                         // TODO: should it be like this?
-                        /*{
+                        {
                             TarEntry entry = TarEntry.CreateEntryFromFile(task.FilePath);
                             entry.Name = Path.GetFileName(task.FilePath);
                             archive.WriteEntry(entry, false);
-                        }*/
+                        }
 
                         // Package includes
                         string projectPath = task.ProjectPath;
@@ -233,8 +233,9 @@ namespace GolemBuild
                     // CD to the directory the batch file is in
                     batch.WriteLine("cd %~DP0");
                     // Create output folder
-                    batch.WriteLine("mkdir output"); 
+                    batch.WriteLine("mkdir output");
 
+                    int numberOfIncludeDirs = 0;
                     List<CompilerArg> compilerArgs = new List<CompilerArg>();
                     foreach (CompilationTask task in taskList)
                     {
@@ -252,6 +253,8 @@ namespace GolemBuild
                         if (found)
                             continue;
 
+                        numberOfIncludeDirs = Math.Max(numberOfIncludeDirs, task.IncludeDirs.Count);
+
                         CompilerArg newCompilerArg = new CompilerArg();
                         newCompilerArg.compiler = task.Compiler;
                         newCompilerArg.args = task.CompilerArgs;
@@ -262,7 +265,8 @@ namespace GolemBuild
                     // Add compilation commands, once per CompilerArg
                     foreach(CompilerArg compilerArg in compilerArgs)
                     {
-                        compilerArg.args += " /I\"includes\" /FS";
+                        for(int i=0;i< numberOfIncludeDirs;++i)
+                            compilerArg.args += " /I\"includes"+i.ToString()+"\" /FS";
                         compilerArg.args += " /Fo\"output/\"";
                         compilerArg.args += " /Fd\"output/" + Path.GetFileNameWithoutExtension(compilerArg.files[0]) + ".pdb\"";
                         compilerArg.args += " /MP" + TaskCapacity;
@@ -299,6 +303,195 @@ namespace GolemBuild
 
                 return hash;
             }
+        }
+
+        private string PackFilesPreProcessed(List<CompilationTask> taskList)
+        {
+            byte[] package;
+            using (var memoryStream = new MemoryStream())
+            {
+                using (var archive = new TarOutputStream(memoryStream))
+                {
+                    List<string> addedEntries = new List<string>();
+
+                    // Package precompiled header if used
+                    foreach (CompilationTask task in taskList)
+                    {
+                        if (task.PrecompiledHeader.Length > 0)
+                        {
+                            TarEntry entry = TarEntry.CreateEntryFromFile(task.PrecompiledHeader);
+                            entry.Name = Path.GetFileName(task.PrecompiledHeader);
+                            using (Stream inputStream = File.OpenRead(task.PrecompiledHeader))
+                            {
+                                entry.Size = inputStream.Length;
+                                archive.PutNextEntry(entry);
+                                writeStreamToTar(archive, inputStream);
+                                archive.CloseEntry();
+                            }
+                            break;
+                        }
+                    }
+
+                    //foreach compilation task, preprocess the cpp file and put in package
+                    foreach (CompilationTask task in taskList)
+                    {
+                        //preprocess file, grab output, write the file as file to compile on external machine
+                        Process proc = new Process();
+                        string args = "";
+                        foreach (string inc in task.IncludeDirs)
+                            args += " /I\"" + inc + "\" ";
+                        args += "/E " + task.CompilerArgs + " " + task.FilePath;
+                        proc.StartInfo.Arguments = args;
+                        proc.StartInfo.FileName = task.Compiler;
+                        proc.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                        proc.StartInfo.UseShellExecute = false;
+                        proc.StartInfo.RedirectStandardInput = false;
+                        proc.StartInfo.RedirectStandardOutput = true;
+                        proc.StartInfo.RedirectStandardError = true;
+                        proc.StartInfo.CreateNoWindow = true;
+
+                        proc.Start();
+
+                        MemoryStream sb = new MemoryStream();
+                        StreamWriter sw = new StreamWriter(sb);
+
+                        proc.OutputDataReceived += (sender, e) =>
+                        {
+                            if (e.Data != null)
+                            {
+                                sw.WriteLine(e.Data);
+                            }
+                        };
+
+                        proc.ErrorDataReceived += (sender, e) =>
+                        {
+                            if (e.Data != null)
+                            {
+                                string output = e.Data;
+                                Logger.LogMessage(output);
+                            }
+                        };
+                        proc.BeginOutputReadLine();
+                        proc.BeginErrorReadLine();
+
+                        proc.WaitForExit();
+
+                        sw.Flush();
+
+                        if (proc.ExitCode == 0)
+                        {
+                            //TODO: this might be inside a folder
+                            TarEntry entry = TarEntry.CreateTarEntry(task.FilePath);
+                            TarEntry.NameTarHeader(entry.TarHeader, Path.GetFileName(task.FilePath));
+                            entry.Size = sb.Length;
+                            archive.PutNextEntry(entry);
+                            sb.Seek(0, SeekOrigin.Begin);
+                            writeStreamToTar(archive, sb);
+                            archive.CloseEntry();
+                        }
+                        else
+                        {
+                            Logger.LogError($"Preprocessing of file: {task.FilePath} failed");
+                        }
+                        sw.Dispose();
+                    }
+
+                    // Package build batch
+                    TextWriter batch = new StreamWriter("golembuild.bat", false);
+
+                    // CD to the directory the batch file is in
+                    batch.WriteLine("cd %~DP0");
+                    // Create output folder
+                    batch.WriteLine("mkdir output");
+
+                    int numberOfIncludeDirs = 0;
+                    List<CompilerArg> compilerArgs = new List<CompilerArg>();
+                    foreach (CompilationTask task in taskList)
+                    {
+                        bool found = false;
+                        foreach (CompilerArg compilerArg in compilerArgs)
+                        {
+                            if (compilerArg.compiler == task.Compiler && compilerArg.args == task.CompilerArgs)
+                            {
+                                compilerArg.files.Add(Path.GetFileName(task.FilePath));
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (found)
+                            continue;
+
+                        numberOfIncludeDirs = Math.Max(numberOfIncludeDirs, task.IncludeDirs.Count);
+
+                        CompilerArg newCompilerArg = new CompilerArg();
+                        newCompilerArg.compiler = task.Compiler;
+                        newCompilerArg.args = task.CompilerArgs;
+                        newCompilerArg.files.Add(Path.GetFileName(task.FilePath));
+                        compilerArgs.Add(newCompilerArg);
+                    }
+
+                    // Add compilation commands, once per CompilerArg
+                    foreach (CompilerArg compilerArg in compilerArgs)
+                    {
+                        compilerArg.args += " /FS";
+                        compilerArg.args += " /Fo\"output/\"";
+                        compilerArg.args += " /Fd\"output/" + Path.GetFileNameWithoutExtension(compilerArg.files[0]) + ".pdb\"";
+                        compilerArg.args += " /MP" + TaskCapacity;
+
+                        batch.Write("\"../" + Path.GetFileName(compilerArg.compiler) + "\" " + compilerArg.args);
+
+                        foreach (string file in compilerArg.files)
+                        {
+                            batch.Write(" " + file);
+                        }
+                        batch.WriteLine();
+                    }
+
+                    // Zip output folder
+                    batch.WriteLine("powershell.exe -nologo -noprofile -command \"& { Add-Type -A 'System.IO.Compression.FileSystem'; [IO.Compression.ZipFile]::CreateFromDirectory('output', 'output.zip'); }\"");
+
+                    // stop the service
+                    batch.WriteLine("\"../mspdbsrv.exe\" -stop");
+                    batch.WriteLine("exit 0");//assume no error
+
+                    batch.Close();
+
+                    TarEntry batchEntry = TarEntry.CreateEntryFromFile("golembuild.bat");
+                    batchEntry.Name = "golembuild.bat";
+                    using (Stream inputStream = File.OpenRead("golembuild.bat"))
+                    {
+                        batchEntry.Size = inputStream.Length;
+                        archive.PutNextEntry(batchEntry);
+                        writeStreamToTar(archive, inputStream);
+                        archive.CloseEntry();
+                    }
+                }
+                package = memoryStream.ToArray();
+
+                string hash = GolemCache.RegisterTasksPackage(package);
+
+                FileStream debug = new FileStream(hash + ".tar", FileMode.Create);
+                debug.Write(package, 0, package.Length);
+                debug.Close();
+
+                return hash;
+            }
+        }
+
+        private void writeStreamToTar(TarOutputStream tarOutputStream, Stream inputStream)
+        {
+            // this is copied from TarArchive.WriteEntryCore
+            byte[] localBuffer = new byte[32 * 1024];
+            while (true)
+            {
+                int numRead = inputStream.Read(localBuffer, 0, localBuffer.Length);
+                if (numRead <= 0)
+                    break;
+
+                tarOutputStream.Write(localBuffer, 0, numRead);
+            }
+            tarOutputStream.Flush();
         }
     }
 }

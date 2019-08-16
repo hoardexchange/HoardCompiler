@@ -836,13 +836,6 @@ namespace GolemBuild
             {
                 line = line.Trim();
 
-                // Remove // comments
-                if (line.Contains("//"))
-                {
-                    int to = line.IndexOf("//");
-                    line = line.Substring(0, to);
-                }
-
                 // Start multiline comment
                 if (line.Contains("/*"))
                 {
@@ -879,7 +872,16 @@ namespace GolemBuild
                     continue;
                 }
 
-                if (line.Contains("#include"))
+                // Remove // comments
+                if (line.Contains("//"))
+                {
+                    int to = line.IndexOf("//");
+                    line = line.Substring(0, to);
+                }
+
+                var match = System.Text.RegularExpressions.Regex.Match(line, @"#\s*include");
+
+                if (match.Success)//line.Contains("#include"))
                 {
                     if (line.Contains("<") && line.Contains(">"))
                     {
@@ -903,7 +905,7 @@ namespace GolemBuild
             }
         }
 
-        private void FindIncludes(bool isLocal, string curFolder, string filePath, List<string> includePaths, List<string> includes)
+        private void FindIncludes(bool isLocal, string curFolder, string filePath, IEnumerable<string> includePaths, List<string> includes)
         {
             bool fileExists = false;
             string fullPath = null;
@@ -1038,24 +1040,22 @@ namespace GolemBuild
                     {
                         List<string> includes = new List<string>();
 
-                        
-
-                        FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
+                        //disabled as we are now preprocessing files
+                        //FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
 
                         Logger.LogMessage(">> " + item.EvaluatedInclude);
-                        if (runVerbose)
+                        /*if (runVerbose)
                         {
                             Logger.LogMessage("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
                         }
                         else
                         {
                             Logger.LogMessage("   Found " + includes.Count + " includes");
-                        }
-                        
+                        }*/                        
 
                         var CLtask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                         CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
-                        string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ObjectFileName", "AssemblerListingLocation" }, item.Metadata);//FS or MP?
+                        string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ObjectFileName", "AssemblerListingLocation"}, item.Metadata);//FS or MP?
 
                         pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", projectPath, item.GetMetadataValue("ProgramDataBaseFileName"), item.GetMetadataValue("PrecompiledHeaderOutputFile"), includePaths, includes));
                     }
@@ -1098,17 +1098,17 @@ namespace GolemBuild
                         ExcludePrecompiledHeader = true;
                 }
 
-                FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
+                //FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
 
                 Logger.LogMessage(">> " + item.EvaluatedInclude);
-                if (runVerbose)
+                /*if (runVerbose)
                 {
                     Logger.LogMessage("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
                 }
                 else
                 {
                     Logger.LogMessage("   Found " + includes.Count + " includes");
-                }
+                }*/
 
                 var Task = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                 Task.GetType().GetProperty("Sources").SetValue(Task, new TaskItem[] { new TaskItem() });
@@ -1117,7 +1117,7 @@ namespace GolemBuild
 
                 if (runDistributed)
                 {
-                    args = GenerateTaskCommandLine(Task, new string[] { "ObjectFileName", "AssemblerListingLocation", "ProgramDataBaseFileName", "AdditionalIncludeDirectories" }, item.Metadata);//FS or MP?
+                    args = GenerateTaskCommandLine(Task, new string[] { "ObjectFileName", "AssemblerListingLocation", "ProgramDataBaseFileName","AdditionalIncludeDirectories" }, item.Metadata);//FS or MP?
                 }
                 else
                 {
