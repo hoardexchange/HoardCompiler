@@ -131,25 +131,28 @@ namespace GolemBuild
             //return new ExecCommand("cmd.exe", new List<string> { "/k mkdir test" });//cd " + fileName + ".tar && golembuild.bat" });
         }
 
-        private void AddFileToTar(TarArchive archive, string filePath, string entry, ref List<string> addedEntries)
+        private void AddFileToTar(TarArchive archive, string filePath, string entry, List<string> addedEntries)
         {
             if (addedEntries.Contains(entry.ToLower()))
                 return;
 
-            string[] splitPath = entry.Split('/');
+            string[] splitPath = entry.Split('/','\\');
 
             for(int i = 1; i < splitPath.Length; i++)
             {
-                string path = "";
-                for(int j = 0; j < i; j++)
+                string path = splitPath[0];
+                for(int j = 1; j < i; j++)
                 {
-                    path += splitPath[j]+"/";
+                    path += Path.DirectorySeparatorChar+splitPath[j];
                 }
 
                 if (addedEntries.Contains(path.ToLower()))
                     continue;
 
                 TarEntry pathEntry = TarEntry.CreateTarEntry(path);
+                pathEntry.TarHeader.Mode = 1003;
+                pathEntry.TarHeader.TypeFlag = TarHeader.LF_DIR;
+                pathEntry.TarHeader.Size = 0;
                 archive.WriteEntry(pathEntry, false);
                 addedEntries.Add(path.ToLower());
             }
@@ -185,11 +188,13 @@ namespace GolemBuild
                     foreach (CompilationTask task in taskList)
                     {
                         // Package sourcefiles
-                        {
+                        // not needed since this file is already in the task.Includes
+                        // TODO: should it be like this?
+                        /*{
                             TarEntry entry = TarEntry.CreateEntryFromFile(task.FilePath);
                             entry.Name = Path.GetFileName(task.FilePath);
                             archive.WriteEntry(entry, false);
-                        }
+                        }*/
 
                         // Package includes
                         string projectPath = task.ProjectPath;
@@ -198,33 +203,27 @@ namespace GolemBuild
 
                         foreach (string include in task.Includes)
                         {
-                            string relative = null;
                             string dstFilePath = null;
                             if (include.StartsWith(projectPath))
                             {
-                                relative = include.Replace(projectPath, "");
+                                string relative = include.Replace(projectPath, "").TrimStart('\\','/');
                                 dstFilePath = Path.Combine(dstProjectIncludePath, relative);
                             }
                             else
                             {
-                                foreach (string srcIncludePath in task.IncludeDirs)
+                                for (int i=0;i<task.IncludeDirs.Count;++i)
                                 {
+                                    string srcIncludePath = task.IncludeDirs[i];
                                     if (include.StartsWith(srcIncludePath))
                                     {
-                                        relative = include.Replace(srcIncludePath, "");
-                                        dstFilePath = Path.Combine(dstLibIncludePath, relative);
+                                        string relative = include.Replace(srcIncludePath, "").TrimStart('\\', '/');
+                                        dstFilePath = Path.Combine(dstLibIncludePath+i.ToString(), relative);
                                         break;
                                     }
                                 }
                             }
 
-                            if (!addedEntries.Contains(dstFilePath.ToLower()))
-                            {
-                                TarEntry includeEntry = TarEntry.CreateEntryFromFile(include);
-                                includeEntry.Name = "includes/" + relative;
-                                archive.WriteEntry(includeEntry, false);
-                                addedEntries.Add(dstFilePath.ToLower());
-                            }
+                            AddFileToTar(archive, include, dstFilePath, addedEntries);
                         }
                     }
 

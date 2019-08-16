@@ -149,7 +149,7 @@ namespace GolemBuild
                     AddDirectoryFilesToTar(tarArchive, directory, recurse);
             }
         }
-        private bool PackageTasks(Project project)
+        /*private bool PackageTasks(Project project)
         {
             string projectPath = Path.GetDirectoryName(project.FullPath);
             string golemBuildPath = Path.Combine(projectPath, "GolemBuildTasks");
@@ -322,7 +322,7 @@ namespace GolemBuild
                 }
             }
             return true;
-        }
+        }*/
 
         private bool QueuePackagedTasks(Project project)
         {
@@ -910,11 +910,12 @@ namespace GolemBuild
             //if filePath is absolute change cur folder and split path
             if (Path.IsPathRooted(filePath))
             {
-                if (File.Exists(filePath))
+                throw new NotSupportedException($"Could not add an absolute include: {filePath}!\nGU currently does not support absolute file paths! Please change this include to relative one!");
+                /*if (File.Exists(filePath))
                 {
                     fullPath = filePath;
                     fileExists = true;                    
-                }
+                }*/
             }
             else
             {                
@@ -1149,7 +1150,7 @@ namespace GolemBuild
                 }
                 string pdb = item.GetMetadataValue("ProgramDataBaseFileName");
 
-                tasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, pch, pdb, "", projectPath, includePaths, includes));
+                tasks.Add(new CompilationTask(Path.GetFullPath(Path.Combine(project.DirectoryPath, item.EvaluatedInclude)), compilerPath, args, pch, pdb, "", projectPath, includePaths, includes));
             }
 
             return;
