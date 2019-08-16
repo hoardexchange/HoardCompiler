@@ -154,61 +154,40 @@ namespace GolemBuild
                             entry.Name = Path.GetFileName(task.FilePath);
                             archive.WriteEntry(entry, false);
                         }
-                        
+
                         // Package includes
+                        string projectPath = task.ProjectPath;
+                        string dstLibIncludePath = "includes";
+                        string dstProjectIncludePath = "";
+
                         foreach (string include in task.Includes)
                         {
-                            foreach (string srcIncludePath in task.IncludeDirs)
+                            string relative = null;
+                            string dstFilePath = null;
+                            if (include.StartsWith(projectPath))
                             {
-                                string srcFilePath = Path.Combine(srcIncludePath, include);
-                                if (File.Exists(srcFilePath))
+                                relative = include.Replace(projectPath, "");
+                                dstFilePath = Path.Combine(dstProjectIncludePath, relative);
+                            }
+                            else
+                            {
+                                foreach (string srcIncludePath in task.IncludeDirs)
                                 {
-                                    string entry = Path.Combine("includes", include);
-                                    if (!addedEntries.Contains(entry.ToLower()))
+                                    if (include.StartsWith(srcIncludePath))
                                     {
-                                        TarEntry includeEntry = TarEntry.CreateEntryFromFile(srcFilePath);
-                                        includeEntry.Name = "includes/" + srcFilePath.Replace(srcIncludePath, "");
-                                        archive.WriteEntry(includeEntry, false);
-                                        addedEntries.Add(entry.ToLower());
+                                        relative = include.Replace(srcIncludePath, "");
+                                        dstFilePath = Path.Combine(dstLibIncludePath, relative);
+                                        break;
                                     }
                                 }
                             }
-                        }
 
-                        // Package local includes from include folders
-                        foreach (string include in task.LocalIncludes)
-                        {
-                            foreach (string srcIncludePath in task.IncludeDirs)
+                            if (!addedEntries.Contains(dstFilePath.ToLower()))
                             {
-                                string srcFilePath = Path.Combine(srcIncludePath, include);
-                                if (File.Exists(srcFilePath))
-                                {
-                                    string entry = Path.Combine("includes", include);
-                                    if (!addedEntries.Contains(entry.ToLower()))
-                                    {
-                                        TarEntry includeEntry = TarEntry.CreateEntryFromFile(srcFilePath);
-                                        includeEntry.Name = "includes/" + srcFilePath.Replace(srcIncludePath, "");
-                                        archive.WriteEntry(includeEntry, false);
-                                        addedEntries.Add(entry.ToLower());
-                                    }
-                                }
-                            }
-                        }
-
-                        // Package local includes from project folder
-                        foreach (string include in task.LocalIncludes)
-                        {
-                            string includePath = Path.Combine(task.ProjectPath, include);
-                            if (File.Exists(includePath))
-                            {
-                                string entry = Path.Combine("includes", include);
-                                if (!addedEntries.Contains(entry.ToLower()))
-                                {
-                                    TarEntry includeEntry = TarEntry.CreateEntryFromFile(includePath);
-                                    includeEntry.Name = "includes/" + includePath.Replace(includePath, "");
-                                    archive.WriteEntry(includeEntry, false);
-                                    addedEntries.Add(entry.ToLower());
-                                }
+                                TarEntry includeEntry = TarEntry.CreateEntryFromFile(include);
+                                includeEntry.Name = "includes/" + relative;
+                                archive.WriteEntry(includeEntry, false);
+                                addedEntries.Add(dstFilePath.ToLower());
                             }
                         }
                     }

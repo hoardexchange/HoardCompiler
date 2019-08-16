@@ -22,6 +22,13 @@ namespace GolemBuild
         /// </summary>
         public string BuildPath { get; set; }
 
+        public GolemHttpService()
+        {
+            if (!HttpListener.IsSupported)
+                throw new NotSupportedException(
+                    "Needs Windows XP SP2, Server 2003 or later.");
+        }
+
         public void Start()
         {
             cancellationSource = new CancellationTokenSource();

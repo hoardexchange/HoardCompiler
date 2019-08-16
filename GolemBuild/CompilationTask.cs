@@ -18,11 +18,10 @@ namespace GolemBuild
         public string ProjectPath { get; set; }
         public List<string> IncludeDirs { get; set; }
         public List<string> Includes { get; set; }
-        public List<string> LocalIncludes { get; set; }
 
         
 
-        public CompilationTask(string filePath, string compiler, string compilerArgs, string pch, string pdb, string outputPath, string projectPath, List<string> includeDirs, List<string> includes, List<string> localIncludes)
+        public CompilationTask(string filePath, string compiler, string compilerArgs, string pch, string pdb, string outputPath, string projectPath, List<string> includeDirs, List<string> includes)
         {
             FilePath = filePath;
             Compiler = compiler;
@@ -33,7 +32,6 @@ namespace GolemBuild
             ProjectPath = projectPath;
             IncludeDirs = includeDirs;
             Includes = includes;
-            LocalIncludes = localIncludes;
         }
     }
 }
