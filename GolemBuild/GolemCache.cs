@@ -22,6 +22,12 @@ namespace GolemBuild
         static List<CompilerPackage> compilerCache = new List<CompilerPackage>();
         static Dictionary<string, byte[]> tasksCache = new Dictionary<string, byte[]>();
 
+        static public void Reset()
+        {
+            compilerCache.Clear();
+            tasksCache.Clear();
+        }
+
         static private void AddDirectoryFilesToTar(TarArchive tarArchive, string sourceDirectory, bool recurse)
         {
             // Optionally, write an entry for the directory itself.

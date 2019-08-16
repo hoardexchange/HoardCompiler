@@ -53,6 +53,11 @@ namespace GolemBuild
             taskList.Add(task);
         }
 
+        public void ClearTasks()
+        {
+            taskList.Clear();
+        }
+
         public void Dispatch(PeerApi golemApi, DeploymentSpec spec, Action onSuccess)
         {
             TaskProc(golemApi, spec).ContinueWith((task) => { onSuccess(); });
@@ -62,7 +67,7 @@ namespace GolemBuild
         {
             try
             {
-                if (deployment != spec)
+                /*if (deployment != spec)
                 {
                     //either there is no deployment, or a change is requested
                     if (deployment!=null)
@@ -71,6 +76,11 @@ namespace GolemBuild
                         deployment = null;
                         deploymentID = null;
                     }
+                    deployment = spec;
+                    deploymentID = await golemApi.CreateDeploymentAsync(Peer.NodeId, deployment);
+                }*/
+                if (deployment == null)
+                {
                     deployment = spec;
                     deploymentID = await golemApi.CreateDeploymentAsync(Peer.NodeId, deployment);
                 }
@@ -82,7 +92,8 @@ namespace GolemBuild
                 ExecCommand compileCmd = GenerateCompileCommand(packedFileName, taskList);
 
                 var results = await golemApi.UpdateDeploymentAsync(Peer.NodeId, deploymentID, new List<Command>() {
-                    new DownloadFileCommand(Service.GetHttpDownloadUri(packedFileName), packedFileName+".tar", FileFormat.Tar)});
+                    new DownloadFileCommand(Service.GetHttpDownloadUri(packedFileName), packedFileName+".tar", FileFormat.Tar),
+                    compileCmd});
 
                 bool error = false;
                 string[] lines = results[0].Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
@@ -105,7 +116,7 @@ namespace GolemBuild
 
                     // Upload output.zip
                     results = await golemApi.UpdateDeploymentAsync(Peer.NodeId, deploymentID, new List<Command>() {
-                        new UploadFileCommand(Service.GetHttpUploadUri(packedFileName), packedFileName+".zip") });
+                        new UploadFileCommand(Service.GetHttpUploadUri(packedFileName), packedFileName + ".tar/output.zip") });
                 }
             }
             catch (Exception ex)
@@ -114,14 +125,39 @@ namespace GolemBuild
             }
         }
 
-        private ExecCommand GenerateDecompressCommand(string fileName, List<CompilationTask> taskList)
-        {
-            return new ExecCommand("powershell.exe -nologo -noprofile -command \" & { Add - Type - A 'System.IO.Compression.FileSystem'; [IO.Compression.ZipFile]::ExtractToDirectory('" + fileName + ".zip', '" + fileName + "'); }", new List<string>());
-        }
-
         private ExecCommand GenerateCompileCommand(string fileName, List<CompilationTask> taskList)
         {
-            return new ExecCommand("cd " + fileName + " && golembuild.bat", new List<string>());
+            return new ExecCommand(fileName + ".tar\\golembuild.bat", new List<string>());
+            //return new ExecCommand("cmd.exe", new List<string> { "/k mkdir test" });//cd " + fileName + ".tar && golembuild.bat" });
+        }
+
+        private void AddFileToTar(TarArchive archive, string filePath, string entry, ref List<string> addedEntries)
+        {
+            if (addedEntries.Contains(entry.ToLower()))
+                return;
+
+            string[] splitPath = entry.Split('/');
+
+            for(int i = 1; i < splitPath.Length; i++)
+            {
+                string path = "";
+                for(int j = 0; j < i; j++)
+                {
+                    path += splitPath[j]+"/";
+                }
+
+                if (addedEntries.Contains(path.ToLower()))
+                    continue;
+
+                TarEntry pathEntry = TarEntry.CreateTarEntry(path);
+                archive.WriteEntry(pathEntry, false);
+                addedEntries.Add(path.ToLower());
+            }
+
+            TarEntry fileEntry = TarEntry.CreateEntryFromFile(filePath);
+            fileEntry.Name = entry;
+            archive.WriteEntry(fileEntry, false);
+            addedEntries.Add(entry.ToLower());
         }
 
         private string PackFiles(List<CompilationTask> taskList)
@@ -129,8 +165,8 @@ namespace GolemBuild
             byte[] package;
             using (var memoryStream = new MemoryStream())
             {
-                using (var gzoStream = new GZipOutputStream(memoryStream))
-                using (var archive = TarArchive.CreateOutputTarArchive(gzoStream))
+                //using (var gzoStream = new GZipOutputStream(memoryStream))
+                using (var archive = TarArchive.CreateOutputTarArchive(memoryStream))
                 {
                     List<string> addedEntries = new List<string>();
 
@@ -195,6 +231,8 @@ namespace GolemBuild
                     // Package build batch
                     TextWriter batch = new StreamWriter("golembuild.bat", false);
 
+                    // CD to the directory the batch file is in
+                    batch.WriteLine("cd %~DP0");
                     // Create output folder
                     batch.WriteLine("mkdir output"); 
 
@@ -206,7 +244,7 @@ namespace GolemBuild
                         {
                             if (compilerArg.compiler == task.Compiler && compilerArg.args == task.CompilerArgs)
                             {
-                                compilerArg.files.Add(task.FilePath);
+                                compilerArg.files.Add(Path.GetFileName(task.FilePath));
                                 found = true;
                                 break;
                             }
@@ -227,7 +265,8 @@ namespace GolemBuild
                     {
                         compilerArg.args += " /I\"includes\" /FS";
                         compilerArg.args += " /Fo\"output/\"";
-                        compilerArg.args += " /Fd\"output/\"" + Path.GetFileNameWithoutExtension(compilerArg.files[0]) + ".pdb";
+                        compilerArg.args += " /Fd\"output/" + Path.GetFileNameWithoutExtension(compilerArg.files[0]) + ".pdb\"";
+                        compilerArg.args += " /MP" + TaskCapacity;
 
                         batch.Write("\"../" + Path.GetFileName(compilerArg.compiler) + "\" " + compilerArg.args);
 
@@ -253,11 +292,13 @@ namespace GolemBuild
                 }
                 package = memoryStream.ToArray();
 
-                //FileStream debug = new FileStream("Debug.tar.gz", FileMode.Create);
-                //debug.Write(package, 0, package.Length);
-                //debug.Close();
+                string hash = GolemCache.RegisterTasksPackage(package);
 
-                return GolemCache.RegisterTasksPackage(package);
+                FileStream debug = new FileStream(hash + ".tar", FileMode.Create);
+                debug.Write(package, 0, package.Length);
+                debug.Close();
+
+                return hash;
             }
         }
     }

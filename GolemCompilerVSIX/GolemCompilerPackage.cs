@@ -83,11 +83,11 @@ namespace GolemCompiler
             var buildService = new GolemBuild.GolemBuildService();
             GolemBuild.Logger.OnMessage += (str) =>
             {
-                Logger.Log(str + "\n");
+                Logger.Log(str);
             };
             GolemBuild.Logger.OnError += (str) =>
             {
-                Logger.Log(str + "\n");
+                Logger.Log(str);
             };
 
             //Add build commands

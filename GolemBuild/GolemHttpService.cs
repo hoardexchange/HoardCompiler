@@ -104,7 +104,11 @@ namespace GolemBuild
             if (request.HttpMethod == "PUT")
             {
                 System.IO.Stream input = request.InputStream;
-                string zipName = Path.Combine(BuildPath, Path.ChangeExtension(Path.GetFileNameWithoutExtension(request.RawUrl), ".zip"));
+
+                string test = GolemBuildService.Instance.BuildPath;
+                string test2 = Path.GetFileNameWithoutExtension(request.RawUrl) + ".zip";
+
+                string zipName = Path.Combine(test, test2);
                 FileStream fileStream = File.Create(zipName);
                 input.CopyTo(fileStream);
                 fileStream.Close();
@@ -141,47 +145,54 @@ namespace GolemBuild
                     }
                 }
 
-                // Are they requesting a CompilerPackage?
-                if (request.RawUrl.StartsWith("/requestID/compiler/"))
+                try
                 {
-                    string compilerHash = request.RawUrl.Replace("/requestID/compiler/", "");
-                    byte[] data;
-                    if (GolemCache.GetCompilerPackageData(compilerHash, out data))
+                    // Are they requesting a CompilerPackage?
+                    if (request.RawUrl.StartsWith("/requestID/compiler/"))
                     {
-                        response.AddHeader("ETag", "SHA1:" + compilerHash);
-
-                        if (size == -1)
+                        string compilerHash = request.RawUrl.Replace("/requestID/compiler/", "");
+                        byte[] data;
+                        if (GolemCache.GetCompilerPackageData(compilerHash, out data))
                         {
-                            size = data.Length;
+                            response.AddHeader("ETag", "SHA1:" + compilerHash);
+
+                            if (size == -1)
+                            {
+                                size = data.Length;
+                            }
+
+                            response.ContentLength64 = size;
+
+                            Stream output = response.OutputStream;
+                            output.Write(data, (int)offset, (int)size);
+                            output.Close();
                         }
+                    }
+                    // Or are they requesting a tasks package?
+                    else if (request.RawUrl.StartsWith("/requestID/tasks/"))
+                    {
+                        string tasksPackageHash = request.RawUrl.Replace("/requestID/tasks/", "");
+                        byte[] data;
+                        if (GolemCache.GetTasksPackage(tasksPackageHash, out data))
+                        {
+                            response.AddHeader("ETag", "SHA1:" + tasksPackageHash);
 
-                        response.ContentLength64 = size;
+                            if (size == -1)
+                            {
+                                size = data.Length;
+                            }
 
-                        Stream output = response.OutputStream;
-                        output.Write(data, (int)offset, (int)size);
-                        output.Close();
+                            response.ContentLength64 = size;
+
+                            Stream output = response.OutputStream;
+                            output.Write(data, (int)offset, (int)size);
+                            output.Close();
+                        }
                     }
                 }
-                // Or are they requesting a tasks package?
-                else if (request.RawUrl.StartsWith("/requestID/tasks/"))
+                catch(System.Net.HttpListenerException ex)
                 {
-                    string tasksPackageHash = request.RawUrl.Replace("/requestID/tasks/", "");
-                    byte[] data;
-                    if (GolemCache.GetTasksPackage(tasksPackageHash, out data))
-                    {
-                        response.AddHeader("ETag", "SHA1:" + tasksPackageHash);
-
-                        if (size == -1)
-                        {
-                            size = data.Length;
-                        }
-
-                        response.ContentLength64 = size;
-
-                        Stream output = response.OutputStream;
-                        output.Write(data, (int)offset, (int)size);
-                        output.Close();
-                    }
+                    Logger.LogMessage(ex.Message);
                 }
                 /*{
                     //1. based on request.Url fetch the content data
