@@ -19,6 +19,7 @@ namespace GolemBuild
         public string compiler;
         public string args;
         public List<string> files = new List<string>();
+        public List<string> includeDirs = new List<string>();
     }
 
     /// <summary>
@@ -317,70 +318,6 @@ namespace GolemBuild
 
                     //precompiled headers are not used in preprocessed build
 
-                    //foreach compilation task, preprocess the cpp file and put in package
-                    foreach (CompilationTask task in taskList)
-                    {
-                        //preprocess file, grab output, write the file as file to compile on external machine
-                        Process proc = new Process();
-                        string args = "";
-                        foreach (string inc in task.IncludeDirs)
-                            args += " /I\"" + inc + "\" ";
-                        args += "/E " + task.CompilerArgs + " " + task.FilePath;
-                        proc.StartInfo.Arguments = args;
-                        proc.StartInfo.FileName = task.Compiler;
-                        proc.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
-                        proc.StartInfo.UseShellExecute = false;
-                        proc.StartInfo.RedirectStandardInput = false;
-                        proc.StartInfo.RedirectStandardOutput = true;
-                        proc.StartInfo.RedirectStandardError = true;
-                        proc.StartInfo.CreateNoWindow = true;
-
-                        proc.Start();
-
-                        MemoryStream sb = new MemoryStream();
-                        StreamWriter sw = new StreamWriter(sb);
-
-                        proc.OutputDataReceived += (sender, e) =>
-                        {
-                            if (e.Data != null)
-                            {
-                                sw.WriteLine(e.Data);
-                            }
-                        };
-
-                        proc.ErrorDataReceived += (sender, e) =>
-                        {
-                            if (e.Data != null)
-                            {
-                                string output = e.Data;
-                                Logger.LogMessage(output);
-                            }
-                        };
-                        proc.BeginOutputReadLine();
-                        proc.BeginErrorReadLine();
-
-                        proc.WaitForExit();
-
-                        sw.Flush();
-
-                        if (proc.ExitCode == 0)
-                        {
-                            //TODO: this might be inside a folder
-                            TarEntry entry = TarEntry.CreateTarEntry(task.FilePath);
-                            TarEntry.NameTarHeader(entry.TarHeader, Path.GetFileName(task.FilePath));
-                            entry.Size = sb.Length;
-                            archive.PutNextEntry(entry);
-                            sb.Seek(0, SeekOrigin.Begin);
-                            writeStreamToTar(archive, sb);
-                            archive.CloseEntry();
-                        }
-                        else
-                        {
-                            Logger.LogError($"Preprocessing of file: {task.FilePath} failed");
-                        }
-                        sw.Dispose();
-                    }
-
                     // Package build batch
                     TextWriter batch = new StreamWriter("golembuild.bat", false);
 
@@ -389,7 +326,6 @@ namespace GolemBuild
                     // Create output folder
                     batch.WriteLine("mkdir output");
 
-                    int numberOfIncludeDirs = 0;
                     List<CompilerArg> compilerArgs = new List<CompilerArg>();
                     foreach (CompilationTask task in taskList)
                     {
@@ -406,9 +342,21 @@ namespace GolemBuild
 
                         foreach (CompilerArg compilerArg in compilerArgs)
                         {
-                            if (compilerArg.compiler == task.Compiler && compilerArg.args == args)
+                            bool includesMatch = task.IncludeDirs.Count == compilerArg.includeDirs.Count;
+                            if (includesMatch)
                             {
-                                compilerArg.files.Add(Path.GetFileName(task.FilePath));
+                                for (int i = 0; i < task.IncludeDirs.Count; ++i)
+                                {
+                                    if (!compilerArg.includeDirs[i].Equals(task.IncludeDirs[i]))
+                                    {
+                                        includesMatch = false;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (compilerArg.compiler == task.Compiler && compilerArg.args == args && includesMatch)
+                            {
+                                compilerArg.files.Add(task.FilePath);
                                 found = true;
                                 break;
                             }
@@ -417,18 +365,102 @@ namespace GolemBuild
                         if (found)
                             continue;
 
-                        numberOfIncludeDirs = Math.Max(numberOfIncludeDirs, task.IncludeDirs.Count);
-
                         CompilerArg newCompilerArg = new CompilerArg();
                         newCompilerArg.compiler = task.Compiler;
                         newCompilerArg.args = args;
-                        newCompilerArg.files.Add(Path.GetFileName(task.FilePath));
+                        newCompilerArg.files.Add(task.FilePath);
+                        foreach (string e in task.IncludeDirs)
+                            newCompilerArg.includeDirs.Add(e);
+
                         compilerArgs.Add(newCompilerArg);
                     }
+
+                    string tempFolder = "iGolemBuild"+Peer.NodeId;
+                    Directory.CreateDirectory(tempFolder);
+
+                    //foreach compilation task, preprocess the cpp file into a temporary folder
+                    foreach (CompilerArg compilerArg in compilerArgs)
+                    {
+                        //preprocess file, grab output, write the file as file to compile on external machine
+                        Process proc = new Process();
+                        string args = compilerArg.args;
+                        //add includes
+                        foreach (string inc in compilerArg.includeDirs)
+                            args += " /I\"" + inc + "\" ";
+                        //add preprocessing flag
+                        args += "/P /Fi" + tempFolder + "\\ ";
+                        args += "/MP" + TaskCapacity;
+                        //add source files
+                        foreach (string srcFile in compilerArg.files)
+                            args += " " + srcFile;
+                        proc.StartInfo.Arguments = args;
+                        proc.StartInfo.FileName = compilerArg.compiler;
+                        proc.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                        proc.StartInfo.UseShellExecute = false;
+                        proc.StartInfo.RedirectStandardInput = false;
+                        proc.StartInfo.RedirectStandardOutput = true;
+                        proc.StartInfo.RedirectStandardError = true;
+                        proc.StartInfo.CreateNoWindow = true;
+
+                        proc.Start();
+
+                        proc.OutputDataReceived += (sender, e) =>
+                        {
+                            if (e.Data != null)
+                            {
+                                string output = e.Data;
+                                Logger.LogMessage(output);
+                            }
+                        };
+
+                        proc.ErrorDataReceived += (sender, e) =>
+                        {
+                            if (e.Data != null)
+                            {
+                                string output = e.Data;
+                                Logger.LogMessage(output);
+                            }
+                        };
+                        proc.BeginOutputReadLine();
+                        proc.BeginErrorReadLine();
+
+                        proc.WaitForExit();
+
+                        if (proc.ExitCode == 0)
+                        {
+                            //now read back the files and add them to tar
+                            foreach (string srcFile in compilerArg.files)
+                            {
+                                //TODO: this might be inside a folder
+                                string precompiledFile = tempFolder+"\\" + Path.GetFileNameWithoutExtension(srcFile) + ".i";
+                                TarEntry entry = TarEntry.CreateEntryFromFile(precompiledFile);
+                                entry.Name = Path.GetFileName(srcFile);
+                                archive.PutNextEntry(entry);
+                                using (Stream inputStream = File.OpenRead(precompiledFile))
+                                {
+                                    writeStreamToTar(archive, inputStream);
+                                    archive.CloseEntry();
+                                }
+                            }
+                        }
+                        else
+                        {
+                            Logger.LogError($"Preprocessing of file package failed");
+                        }
+                    }
+
+                    Directory.Delete(tempFolder, true);
 
                     // Add compilation commands, once per CompilerArg
                     foreach (CompilerArg compilerArg in compilerArgs)
                     {
+                        //remove precompiled header args /Yu /Fp
+                        Match match = Regex.Match(compilerArg.args, "/Yu\".+?\"");
+                        if (match.Success)
+                            compilerArg.args = compilerArg.args.Remove(match.Index, match.Length);
+                        match = Regex.Match(compilerArg.args, "/Fp\".+?\"");
+                        if (match.Success)
+                            compilerArg.args = compilerArg.args.Remove(match.Index, match.Length);
                         compilerArg.args += " /FS";
                         compilerArg.args += " /Fo\"output/\"";
                         compilerArg.args += " /Fd\"output/" + Path.GetFileNameWithoutExtension(compilerArg.files[0]) + ".pdb\"";
@@ -438,7 +470,7 @@ namespace GolemBuild
 
                         foreach (string file in compilerArg.files)
                         {
-                            batch.Write(" " + file);
+                            batch.Write(" " + Path.GetFileName(file));
                         }
                         batch.WriteLine();
                     }
