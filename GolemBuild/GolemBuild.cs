@@ -77,18 +77,21 @@ namespace GolemBuild
                         return false;
                     }*/
 
-                    Logger.LogMessage("Queueing tasks...");
-                    if (!QueuePackagedTasks(project))
+                    if (tasks.Count > 0)
                     {
-                        Logger.LogError("- Queueing failed -");
-                        return false;
-                    }
+                        Logger.LogMessage("Queueing tasks...");
+                        if (!QueuePackagedTasks(project))
+                        {
+                            Logger.LogError("- Queueing failed -");
+                            return false;
+                        }
 
-                    Logger.LogMessage("Waiting for external build...");
-                    if (!GolemBuildService.Instance.WaitTasks())
-                    {
-                        Logger.LogError("- External Compilation failed -");
-                        return false;
+                        Logger.LogMessage("Waiting for external build...");
+                        if (!GolemBuildService.Instance.WaitTasks())
+                        {
+                            Logger.LogError("- External Compilation failed -");
+                            return false;
+                        }
                     }
                 }
                 else
@@ -774,13 +777,13 @@ namespace GolemBuild
             //all pch files
             foreach (var task in pchTasks)
             {
-                linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(Path.GetFileName(task.FilePath), ".obj")) + "\"";
+                linkCommand += " \"" + Path.Combine("GolemBuild", Path.ChangeExtension(Path.GetFileName(task.FilePath), ".obj")) + "\"";
             }
 
             //all compiled obj files
             foreach (var task in tasks)
             {
-                linkCommand += " \"" + Path.Combine(projectPath, "GolemBuild", Path.ChangeExtension(Path.GetFileName(task.FilePath), ".obj")) + "\"";
+                linkCommand += " \"" + Path.Combine("GolemBuild", Path.ChangeExtension(Path.GetFileName(task.FilePath), ".obj")) + "\"";
             }
 
             Logger.LogMessage(string.Format("Linking Task: {0}", linkCommand));
