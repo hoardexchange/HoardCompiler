@@ -9,6 +9,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace GolemBuild
@@ -314,23 +315,7 @@ namespace GolemBuild
                 {
                     List<string> addedEntries = new List<string>();
 
-                    // Package precompiled header if used
-                    foreach (CompilationTask task in taskList)
-                    {
-                        if (task.PrecompiledHeader.Length > 0)
-                        {
-                            TarEntry entry = TarEntry.CreateEntryFromFile(task.PrecompiledHeader);
-                            entry.Name = Path.GetFileName(task.PrecompiledHeader);
-                            using (Stream inputStream = File.OpenRead(task.PrecompiledHeader))
-                            {
-                                entry.Size = inputStream.Length;
-                                archive.PutNextEntry(entry);
-                                writeStreamToTar(archive, inputStream);
-                                archive.CloseEntry();
-                            }
-                            break;
-                        }
-                    }
+                    //precompiled headers are not used in preprocessed build
 
                     //foreach compilation task, preprocess the cpp file and put in package
                     foreach (CompilationTask task in taskList)
@@ -409,9 +394,19 @@ namespace GolemBuild
                     foreach (CompilationTask task in taskList)
                     {
                         bool found = false;
+
+                        //remove precompiled header args /Yu /Fp
+                        string args = task.CompilerArgs;
+                        Match match = Regex.Match(args, "/Yu\".+?\"");
+                        if (match.Success)
+                            args = args.Remove(match.Index, match.Length);
+                        match = Regex.Match(args, "/Fp\".+?\"");
+                        if (match.Success)
+                            args = args.Remove(match.Index, match.Length);
+
                         foreach (CompilerArg compilerArg in compilerArgs)
                         {
-                            if (compilerArg.compiler == task.Compiler && compilerArg.args == task.CompilerArgs)
+                            if (compilerArg.compiler == task.Compiler && compilerArg.args == args)
                             {
                                 compilerArg.files.Add(Path.GetFileName(task.FilePath));
                                 found = true;
@@ -426,7 +421,7 @@ namespace GolemBuild
 
                         CompilerArg newCompilerArg = new CompilerArg();
                         newCompilerArg.compiler = task.Compiler;
-                        newCompilerArg.args = task.CompilerArgs;
+                        newCompilerArg.args = args;
                         newCompilerArg.files.Add(Path.GetFileName(task.FilePath));
                         compilerArgs.Add(newCompilerArg);
                     }

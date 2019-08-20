@@ -978,7 +978,7 @@ namespace GolemBuild
 
         private void CreateCompilationTasks(Project project, string platform)
         {
-            string projectPath = Path.GetDirectoryName(project.FullPath);
+            string projectPath = project.DirectoryPath;
             //in VS2017 this semms to be the proper one
             string VCTargetsPath = project.GetPropertyValue("VCTargetsPathEffective");
             if (string.IsNullOrEmpty(VCTargetsPath))
@@ -1055,9 +1055,12 @@ namespace GolemBuild
 
                         var CLtask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                         CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
-                        string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ObjectFileName", "AssemblerListingLocation"}, item.Metadata);//FS or MP?
+                        string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ProgramDataBaseFileName", "ObjectFileName", "AssemblerListingLocation"}, item.Metadata);//FS or MP?
 
-                        pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", projectPath, item.GetMetadataValue("ProgramDataBaseFileName"), item.GetMetadataValue("PrecompiledHeaderOutputFile"), includePaths, includes));
+                        string pchOutputFile = MakeAbsolutePath(projectPath, item.GetMetadataValue("PrecompiledHeaderOutputFile"));
+                        string pdbOutputFile = MakeAbsolutePath(projectPath, item.GetMetadataValue("ProgramDataBaseFileName"));
+
+                        pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", pdbOutputFile, pchOutputFile, projectPath, includePaths, includes));
                     }
                 }
             }
@@ -1074,11 +1077,7 @@ namespace GolemBuild
                     {                        
                         if (!string.IsNullOrEmpty(path))
                         {
-                            string tPath = path;
-                            if (!Path.IsPathRooted(path))
-                            {
-                                tPath = Path.GetFullPath(Path.Combine(project.DirectoryPath, path));
-                            }
+                            string tPath = MakeAbsolutePath(projectPath,path);
                             if (!includePaths.Contains(tPath))
                                 includePaths.Add(tPath);
                         }
@@ -1146,14 +1145,21 @@ namespace GolemBuild
                 string pch = "";
                 if (pchTasks.Count > 0)
                 {
-                    pch = item.GetMetadataValue("PrecompiledHeaderOutputFile");
+                    pch = MakeAbsolutePath(projectPath, item.GetMetadataValue("PrecompiledHeaderOutputFile"));
                 }
-                string pdb = item.GetMetadataValue("ProgramDataBaseFileName");
+                string pdb = MakeAbsolutePath(projectPath, item.GetMetadataValue("ProgramDataBaseFileName"));
 
                 tasks.Add(new CompilationTask(Path.GetFullPath(Path.Combine(project.DirectoryPath, item.EvaluatedInclude)), compilerPath, args, pch, pdb, "", projectPath, includePaths, includes));
             }
 
             return;
+        }
+
+        private string MakeAbsolutePath(string rootPath, string path)
+        {
+            if (Path.IsPathRooted(path))
+                return path;
+            return Path.GetFullPath(Path.Combine(rootPath, path));
         }
 
         private bool CallPreBuildEvents(Project project)
