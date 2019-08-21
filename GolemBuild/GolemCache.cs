@@ -21,7 +21,7 @@ namespace GolemBuild
 
         static public void Reset()
         {
-            compilerCache.Clear();
+            //compilerCache.Clear();
             tasksCache.Clear();
         }
 
@@ -90,10 +90,11 @@ namespace GolemBuild
             newCompilerPackage.compilers = compilers;
 
             // Lets get all the .exe and .dll files in the same directory (including sub directories) as the compiler and tar.gz them.
+            //step 1. tar file
             using (MemoryStream stream = new MemoryStream())
             {
-                using (GZipOutputStream gzoStream = new GZipOutputStream(stream))
-                using (TarArchive tarArchive = TarArchive.CreateOutputTarArchive(gzoStream))
+                //using (GZipOutputStream gzoStream = new GZipOutputStream(stream))
+                using (TarArchive tarArchive = TarArchive.CreateOutputTarArchive(stream))// gzoStream))
                 {
                     foreach (string compiler in compilers)
                     {
@@ -105,11 +106,20 @@ namespace GolemBuild
                 }
                 newCompilerPackage.data = stream.ToArray();
             }
-            
-            // Calculate the hash of the tar.gz
+            //step 2. calculate SHA1 hash of tar file
             using (var cryptoProvider = new SHA1CryptoServiceProvider())
             {
                 newCompilerPackage.hash = BitConverter.ToString(cryptoProvider.ComputeHash(newCompilerPackage.data)).Replace("-", string.Empty).ToLower();
+            }
+            //step 3. zip file (we cannot calculate SHA1 from zip since zip contains timestamps and metadata and each compression process creates different
+            //header for zip file
+            using (MemoryStream stream = new MemoryStream())
+            {
+                using (GZipOutputStream gzoStream = new GZipOutputStream(stream))
+                {
+                    gzoStream.Write(newCompilerPackage.data,0, newCompilerPackage.data.Length);
+                }
+                newCompilerPackage.data = stream.ToArray();
             }
 
             // Lets cache this for later so we don't need to redo this every time
