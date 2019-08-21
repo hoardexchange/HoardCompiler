@@ -1,14 +1,14 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="GolemCompiler.Hoard.228e7ff4-408d-43ae-8bcb-c39a7d7ea64d" Version="0.2" Language="en-US" Publisher="Hoard S/A" />
+        <Identity Id="HoardCompiler.Hoard.f026fe69-cecf-4e8b-82e1-8b5a93628c79" Version="0.3" Language="en-US" Publisher="Hoard" />
         <DisplayName>Hoard Distributed Compiler</DisplayName>
         <Description xml:space="preserve">Distributed Compiler for C++ projects extension for Visual Studio for Golem Unlimited.</Description>
         <License>License.txt</License>
         <Tags>Hoard, Golem Unlimited, distributed compilation, compiler</Tags>
     </Metadata>
     <Installation>
-        <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[15.0]" />
+        <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[15.0, 16.0)" />
     </Installation>
     <Dependencies>
         <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" d:Source="Manual" Version="[4.5,)" />

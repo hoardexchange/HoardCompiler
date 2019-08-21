@@ -23,8 +23,8 @@
     <ProjectGuid>{A0583977-A5C8-4CB0-AF05-372F7B1BE41A}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>GolemCompilerVSIX2017</RootNamespace>
-    <AssemblyName>GolemCompilerVSIX2017</AssemblyName>
+    <RootNamespace>HoardCompilerVSIX2017</RootNamespace>
+    <AssemblyName>HoardCompilerVSIX2017</AssemblyName>
     <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
@@ -55,11 +55,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="BuildCommand.cs" />
-    <Compile Include="GolemCompilerPackage.cs">
-      <SubType>Component</SubType>
-    </Compile>
     <Compile Include="Logger.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="HoardCompilerPackage.cs">
+      <SubType>Component</SubType>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Key.snk" />
@@ -74,17 +74,18 @@
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
     <Content Include="Resources\BuildCommand.png" />
-    <Content Include="Resources\GolemCompiler.png" />
-    <Content Include="Resources\GolemCompilerPackage.ico" />
+    <Content Include="Resources\HoardCompiler.png" />
+    <Content Include="Resources\HoardCompilerPackage.ico" />
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="GolemCompilerPackage.resx">
+    <EmbeddedResource Include="HoardCompilerPackage.resx">
       <MergeWithCTO>true</MergeWithCTO>
-      <ManifestResourceName>GolemCompilerPackage</ManifestResourceName>
+      <ManifestResourceName>HoardCompilerPackage</ManifestResourceName>
+      <SubType>Designer</SubType>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <VSCTCompile Include="GolemCompilerPackage.vsct">
+    <VSCTCompile Include="HoardCompilerPackage.vsct">
       <ResourceName>Menus.ctmenu</ResourceName>
       <SubType>Designer</SubType>
     </VSCTCompile>

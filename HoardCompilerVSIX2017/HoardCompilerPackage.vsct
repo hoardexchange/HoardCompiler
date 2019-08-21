@@ -22,7 +22,7 @@
 
   <!--The Commands section is where commands, menus, and menu groups are defined.
       This section uses a Guid to identify the package that provides the command defined inside it. -->
-  <Commands package="guidGolemCompilerPackage">
+  <Commands package="guidHoardCompilerPackage">
     <!-- Inside this section we have different sub-sections: one for the menus, another
     for the menu groups, one for the buttons (the actual commands), one for the combos
     and the last one for the bitmaps used. Each element is identified by a command id that
@@ -36,16 +36,16 @@
          group as the part of a menu contained between two lines. The parent of a group
          must be a menu. -->
     <Groups>
-      <Group guid="guidGolemCompilerPackageCmdSet" id="BuildMenuGroup" priority="0x0600">
+      <Group guid="guidHoardCompilerPackageCmdSet" id="BuildMenuGroup" priority="0x0600">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_BUILD"/>
       </Group>
-      <Group guid="guidGolemCompilerPackageCmdSet" id="ProjContextMenuGroup" priority="0x0000">
+      <Group guid="guidHoardCompilerPackageCmdSet" id="ProjContextMenuGroup" priority="0x0000">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_PROJNODE" />
       </Group>
-      <Group guid="guidGolemCompilerPackageCmdSet" id="XProjContextMenuGroup" priority="0x0000">
+      <Group guid="guidHoardCompilerPackageCmdSet" id="XProjContextMenuGroup" priority="0x0000">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_XPROJ_MULTIPROJ" />
       </Group>      
-      <Group guid="guidGolemCompilerPackageCmdSet" id="SlnContextMenuGroup" priority="0x0000">
+      <Group guid="guidHoardCompilerPackageCmdSet" id="SlnContextMenuGroup" priority="0x0000">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_SOLNNODE" />
       </Group>
     </Groups>
@@ -61,29 +61,29 @@
               <CommandFlag>DefaultInvisible</CommandFlag>
               <CommandFlag>DynamicVisibility</CommandFlag>
           If you do not want an image next to your command, remove the Icon node /> -->
-      <Button guid="guidGolemCompilerPackageCmdSet" id="BuildCommandId" priority="0x0100" type="Button">
-        <Parent guid="guidGolemCompilerPackageCmdSet" id="BuildMenuGroup" />
+      <Button guid="guidHoardCompilerPackageCmdSet" id="BuildCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidHoardCompilerPackageCmdSet" id="BuildMenuGroup" />
         <Icon guid="guidImages" id="bmpPic1" />
         <Strings>
           <ButtonText>Golem distributed build solution</ButtonText>
         </Strings>
       </Button>
-      <Button guid="guidGolemCompilerPackageCmdSet" id="SlnBuildCommandId" priority="0x0100" type="Button">
-        <Parent guid="guidGolemCompilerPackageCmdSet" id="SlnContextMenuGroup" />
+      <Button guid="guidHoardCompilerPackageCmdSet" id="SlnBuildCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidHoardCompilerPackageCmdSet" id="SlnContextMenuGroup" />
         <Icon guid="guidImages" id="bmpPic1" />
         <Strings>
           <ButtonText>Golem distributed build solution</ButtonText>
         </Strings>
       </Button>
-      <Button guid="guidGolemCompilerPackageCmdSet" id="ProjBuildCommandId" priority="0x0100" type="Button">
-        <Parent guid="guidGolemCompilerPackageCmdSet" id="ProjContextMenuGroup" />
+      <Button guid="guidHoardCompilerPackageCmdSet" id="ProjBuildCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidHoardCompilerPackageCmdSet" id="ProjContextMenuGroup" />
         <Icon guid="guidImages" id="bmpPic1" />
         <Strings>
           <ButtonText>Golem distributed build project</ButtonText>
         </Strings>
       </Button>
-      <Button guid="guidGolemCompilerPackageCmdSet" id="XProjBuildCommandId" priority="0x0100" type="Button">
-        <Parent guid="guidGolemCompilerPackageCmdSet" id="XProjContextMenuGroup" />
+      <Button guid="guidHoardCompilerPackageCmdSet" id="XProjBuildCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidHoardCompilerPackageCmdSet" id="XProjContextMenuGroup" />
         <Icon guid="guidImages" id="bmpPic1" />
         <Strings>
           <ButtonText>Golem distributed build projects</ButtonText>
@@ -104,10 +104,10 @@
 
   <Symbols>
     <!-- This is the package guid. -->
-    <GuidSymbol name="guidGolemCompilerPackage" value="{58caa410-0099-4620-a7b4-8cce182d193b}" />
+    <GuidSymbol name="guidHoardCompilerPackage" value="{58caa410-0099-4620-a7b4-8cce182d193b}" />
 
     <!-- This is the guid used to group the menu commands together -->
-    <GuidSymbol name="guidGolemCompilerPackageCmdSet" value="{4a0e73c2-8f07-44b9-837a-3f7db6209609}">
+    <GuidSymbol name="guidHoardCompilerPackageCmdSet" value="{4a0e73c2-8f07-44b9-837a-3f7db6209609}">
       <IDSymbol name="BuildMenuGroup" value="0x1020" />
       <IDSymbol name="BuildCommandId" value="0x0100" />
       <IDSymbol name="SlnContextMenuGroup" value="0x1021" />

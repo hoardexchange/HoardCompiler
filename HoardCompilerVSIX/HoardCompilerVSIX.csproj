@@ -20,8 +20,8 @@
     <ProjectGuid>{260F87FB-5269-45CF-ADB7-2F619F6707C8}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>GolemCompiler</RootNamespace>
-    <AssemblyName>GolemCompiler</AssemblyName>
+    <RootNamespace>HoardCompilerVSIX2019</RootNamespace>
+    <AssemblyName>HoardCompilerVSIX2019</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <UseCodebase>true</UseCodebase>
@@ -55,7 +55,7 @@
     <Compile Include="BuildCommand.cs" />
     <Compile Include="Logger.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="GolemCompilerPackage.cs">
+    <Compile Include="HoardCompilerPackage.cs">
       <SubType>Component</SubType>
     </Compile>
   </ItemGroup>
@@ -81,20 +81,19 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="GolemCompilerPackage.resx">
+    <EmbeddedResource Include="HoardCompilerPackage.resx">
       <MergeWithCTO>true</MergeWithCTO>
-      <ManifestResourceName>GolemCompilerPackage</ManifestResourceName>
+      <ManifestResourceName>HoardCompilerPackage</ManifestResourceName>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="index.html" />
     <Content Include="License.txt">
       <IncludeInVSIX>true</IncludeInVSIX>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <ItemGroup>
-    <VSCTCompile Include="GolemCompilerPackage.vsct">
+    <VSCTCompile Include="HoardCompilerPackage.vsct">
       <ResourceName>Menus.ctmenu</ResourceName>
       <SubType>Designer</SubType>
     </VSCTCompile>

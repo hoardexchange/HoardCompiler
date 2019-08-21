@@ -3,7 +3,7 @@ using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using System;
 
-namespace GolemCompiler
+namespace HoardCompiler
 {
     internal static class Logger
     {
@@ -31,10 +31,8 @@ namespace GolemCompiler
             {
                 if (_pane!=null)
                 {
-                    ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                    ThreadHelper.JoinableTaskFactory.StartOnIdle(() =>
                     {
-                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
                         _pane.OutputString(DateTime.Now.ToString() + ": " + message + Environment.NewLine);
                     });
                 }

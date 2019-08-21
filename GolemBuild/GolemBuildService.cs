@@ -92,7 +92,7 @@ namespace GolemBuild
             // Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
             // Configuration.Default.AddApiKeyPrefix("X-GU-APIKEY", "Bearer");
             // TODO: Configure API key authorization: systemName
-            GURestApi.Client.Configuration.Default.AddApiKey("X-GU-APPNAME", "GolemCompiler");
+            GURestApi.Client.Configuration.Default.AddApiKey("X-GU-APPNAME", "HoardCompiler");
             // Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
             GURestApi.Client.Configuration.Default.AddApiKeyPrefix("X-GU-APPNAME", "Bearer");
 
