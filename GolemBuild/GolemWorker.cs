@@ -315,14 +315,7 @@ namespace GolemBuild
                     {
                         bool found = false;
 
-                        //remove precompiled header args /Yu /Fp
                         string args = task.CompilerArgs;
-                        Match match = Regex.Match(args, "/Yu\".+?\"");
-                        if (match.Success)
-                            args = args.Remove(match.Index, match.Length);
-                        match = Regex.Match(args, "/Fp\".+?\"");
-                        if (match.Success)
-                            args = args.Remove(match.Index, match.Length);
 
                         foreach (CompilerArg compilerArg in compilerArgs)
                         {
