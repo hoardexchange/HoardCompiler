@@ -1,11 +1,8 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -190,23 +187,10 @@ namespace GolemBuild
                         }
                     }
                 }
-                catch(System.Net.HttpListenerException ex)
+                catch(HttpListenerException ex)
                 {
                     Logger.LogMessage(ex.Message);
                 }
-                /*{
-                    //1. based on request.Url fetch the content data
-                    DataPackage data = GetDataPackage(request.Url, offset, size);
-                    //2. calculate some hash so provider nows if content has changed or not
-                    response.AddHeader("ETag", data.DataHash);
-                    response.ContentLength64 = data.DataStream.Length;
-                    //response.ContentType = "application/x-gzip";// - not needed
-                    //response.AddHeader("Accept-Ranges", "bytes");// - not needed?
-                    System.IO.Stream output = response.OutputStream;
-                    output.Write(data.DataStream, 0, data.DataStream.Length);
-                    // close the output stream.
-                    output.Close();
-                }*/
             }
         }
 

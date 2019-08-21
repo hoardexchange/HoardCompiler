@@ -1,5 +1,4 @@
-﻿using ICSharpCode.SharpZipLib.GZip;
-using ICSharpCode.SharpZipLib.Tar;
+﻿using ICSharpCode.SharpZipLib.Tar;
 using Microsoft.Build.Evaluation;
 using Microsoft.Build.Utilities;
 using System;
@@ -9,6 +8,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace GolemBuild
@@ -152,180 +152,6 @@ namespace GolemBuild
                     AddDirectoryFilesToTar(tarArchive, directory, recurse);
             }
         }
-        /*private bool PackageTasks(Project project)
-        {
-            string projectPath = Path.GetDirectoryName(project.FullPath);
-            string golemBuildPath = Path.Combine(projectPath, "GolemBuildTasks");
-
-            golemBuildTasksPath = golemBuildPath;
-
-            Directory.CreateDirectory(golemBuildPath);
-
-            // Kill mspdbsrv.exe, this has to be done because it sometimes stays open and doesn't shut down
-            // This bug has been known to Microsoft since at least 2005, but they don't seem to want to fix the actual issue
-            // Instead the recommend force terminating it, and even built in some force terminating in msbuild and visual studio
-            foreach (Process proc in Process.GetProcessesByName("mspdbsrv"))
-            {
-                proc.Kill();
-                proc.WaitForExit();
-            }
-
-            // Clear GolemBuildTasks directory
-            System.IO.DirectoryInfo di = new DirectoryInfo(golemBuildPath);
-
-            foreach (FileInfo file in di.GetFiles())
-            {
-                try
-                {
-                    file.Delete();
-                }
-                catch(Exception)
-                {
-
-                }
-            }
-            foreach (DirectoryInfo dir in di.GetDirectories())
-            {
-                try
-                {
-                    dir.Delete(true);
-                }
-                catch (Exception)
-                {
-
-                }
-            }
-
-            // Package tasks
-            for (int i = 0; i < tasks.Count; i++)
-            {
-                string taskPath = Path.Combine(golemBuildPath, Path.GetFileNameWithoutExtension(tasks[i].FilePath));
-                Directory.CreateDirectory(taskPath);
-
-                // Package precompiled header if used
-                if (tasks[i].PrecompiledHeader.Length > 0)
-                {
-                    string dstPchPath = Path.Combine(taskPath, tasks[i].PrecompiledHeader);
-                    Directory.CreateDirectory(Path.GetDirectoryName(dstPchPath));
-                    File.Copy(Path.Combine(projectPath, tasks[i].PrecompiledHeader), dstPchPath);
-                }
-
-                // Package pdb and idb if used
-                string pdbArg = "";
-                bool usedPdb = false;
-                if (tasks[i].PDB.Length > 0 )
-                {
-                    string srcPdbPath = Path.Combine(projectPath, tasks[i].PDB);
-                    if (File.Exists(srcPdbPath))
-                    {
-                        string dstPdbPath = Path.Combine(taskPath, tasks[i].PDB);
-                        Directory.CreateDirectory(Path.GetDirectoryName(dstPdbPath));
-                        File.Copy(Path.Combine(projectPath, tasks[i].PDB), dstPdbPath); // PDB
-
-                        string srcIdbPath = Path.Combine(projectPath, Path.ChangeExtension(tasks[i].PDB, ".idb"));
-                        if (File.Exists(srcIdbPath))
-                            File.Copy(srcIdbPath, Path.ChangeExtension(dstPdbPath, ".idb")); // IDB
-                        pdbArg = " /Fd\"" + tasks[i].PDB + "\"";
-                        usedPdb = true;
-                    }
-                }
-
-                // Package sourcefile
-                string source = tasks[i].FilePath;
-                string destination = Path.Combine(taskPath, Path.GetFileName(tasks[i].FilePath));
-
-                if (!Path.IsPathRooted(tasks[i].FilePath))
-                {
-                    source = Path.Combine(projectPath, tasks[i].FilePath);
-                }
-
-                File.Copy(source, destination);
-
-                // Package includes
-                string dstLibIncludePath = Path.Combine(taskPath, "includes");
-                string dstProjectIncludePath = taskPath;
-
-                foreach (string include in tasks[i].Includes)
-                {
-                    string relative = null;
-                    string dstFilePath = null;
-                    if (include.StartsWith(projectPath))
-                    {
-                        relative = include.Replace(projectPath,"");                        
-                        dstFilePath = Path.Combine(dstProjectIncludePath, relative);                        
-                    }
-                    else
-                    {
-                        foreach (string srcIncludePath in tasks[i].IncludeDirs)
-                        {
-                            if (include.StartsWith(srcIncludePath))
-                            {
-                                relative = include.Replace(srcIncludePath, "");
-                                dstFilePath = Path.Combine(dstLibIncludePath, relative);
-                                break;
-                            }
-                        }
-                    }
-
-                    Directory.CreateDirectory(Path.GetDirectoryName(dstFilePath));
-                    File.Copy(include, dstFilePath, true);
-                }
-
-                // Create output directory
-                Directory.CreateDirectory(Path.Combine(taskPath, "output"));
-
-                // Create build batch
-                string batchPath = Path.Combine(taskPath, "golembuild.bat");
-                StreamWriter batch = File.CreateText(batchPath);
-
-                string compilerArgs = tasks[i].CompilerArgs;
-                compilerArgs += " /I\"includes\" /FS";
-                compilerArgs += " /Fo\"" + Path.Combine("output", Path.GetFileNameWithoutExtension(tasks[i].FilePath)) +".obj\"";
-                if (!usedPdb)
-                {
-                    compilerArgs += " /Fd\"" + Path.Combine("output", Path.ChangeExtension(tasks[i].FilePath, ".pdb")) + "\"";
-                }
-                else
-                {
-                    compilerArgs += pdbArg;
-                }
-
-                batch.WriteLine("\"" + Path.GetFileName(tasks[i].Compiler) + "\" " + compilerArgs + " " + tasks[i].FilePath); // Execute task
-
-                // Copy pdb to output if needed
-                if (tasks[i].PDB.Length > 0)
-                {
-                    string srcPdb = tasks[i].PDB;
-                    string dstPdb = Path.Combine("output", Path.ChangeExtension(Path.GetFileName(tasks[i].FilePath), ".pdb"));
-
-                    Directory.CreateDirectory(Path.Combine(taskPath, Path.GetDirectoryName(srcPdb)));
-
-                    //not needed
-                    //batch.WriteLine("copy \"" + srcPdb + "\" \"" + dstPdb + "\""); 
-                }
-
-                // Zip output folder
-                batch.WriteLine("powershell.exe -nologo -noprofile -command \"& { Add-Type -A 'System.IO.Compression.FileSystem'; [IO.Compression.ZipFile]::CreateFromDirectory('output', 'output.zip'); }\"");
-
-                // stop the service
-                batch.WriteLine("mspdbsrv.exe -stop");
-                batch.WriteLine("exit 0");//assume no error
-
-                batch.Close();
-                //batch.WriteLine("exit");
-
-                // Tar.gz the task
-                string tarName = taskPath + ".tar.gz";
-                using (var tarStream = File.Create(tarName))
-                using (var gzoStream = new GZipOutputStream(tarStream))
-                using (var tarArchive = TarArchive.CreateOutputTarArchive(gzoStream))
-                {
-                    tarArchive.RootPath = taskPath;
-                    AddDirectoryFilesToTar(tarArchive, taskPath, true);
-                }
-            }
-            return true;
-        }*/
 
         private bool QueuePackagedTasks(Project project)
         {
@@ -805,180 +631,6 @@ namespace GolemBuild
             return linkSuccessful;
         }
 
-        bool FindCommonPath(string path, string path2, out string common)
-        {
-            common = "";
-            string[] string2Tokenized = path2.Split('\\');
-
-            for (int i = string2Tokenized.Length - 1; i >= 0; i--)
-            {
-                string subStringToTest = "";
-                for (int j = 0; j < i; j++)
-                {
-                    subStringToTest = Path.Combine(subStringToTest, string2Tokenized[j]);
-                }
-
-                if (path.Contains(subStringToTest))
-                {
-                    int subStringPos = path.LastIndexOf(subStringToTest);
-                    common = path.Substring(0, subStringPos);
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private void parseIncludes(string path, Action<bool, string> visitorCB)
-        {
-            StreamReader file = new StreamReader(path);
-
-            bool isInMultilineComment = false;
-            string line;
-            while ((line = file.ReadLine()) != null)
-            {
-                line = line.Trim();
-
-                // Start multiline comment
-                if (line.Contains("/*"))
-                {
-                    // End multiline comment
-                    if (line.Contains("*/"))
-                    {
-                        int startComment = line.IndexOf("/*");
-                        int endComment = line.IndexOf("*/") + 1;
-
-                        string newLine = "";
-                        if (startComment != 0)
-                            newLine += line.Substring(0, startComment);
-                        if (endComment < line.Length - 1)
-                            newLine += line.Substring(endComment);
-
-                        line = newLine;
-                    }
-                    else
-                    {
-                        int to = line.IndexOf("/*") + 1;
-                        line = line.Substring(0, to);
-                        isInMultilineComment = true;
-                    }
-                }
-                else if (isInMultilineComment && line.Contains("*/"))
-                {
-                    int to = line.IndexOf("*/") + 1;
-                    if (to < line.Length - 1)
-                        line = line.Substring(to);
-                    isInMultilineComment = false;
-                }
-                else if (isInMultilineComment)
-                {
-                    continue;
-                }
-
-                // Remove // comments
-                if (line.Contains("//"))
-                {
-                    int to = line.IndexOf("//");
-                    line = line.Substring(0, to);
-                }
-
-                var match = System.Text.RegularExpressions.Regex.Match(line, @"#\s*include");
-
-                if (match.Success)//line.Contains("#include"))
-                {
-                    if (line.Contains("<") && line.Contains(">"))
-                    {
-                        // Angle bracket include
-                        int from = line.IndexOf("<") + 1;
-                        int to = line.LastIndexOf(">");
-                        string includeName = line.Substring(from, to - from);
-
-                        visitorCB(false, includeName);
-                    }
-                    else if (line.Contains("\""))
-                    {
-                        // Quote include
-                        int from = line.IndexOf("\"") + 1;
-                        int to = line.LastIndexOf("\"");
-                        string includeName = line.Substring(from, to - from);
-
-                        visitorCB(true, includeName);
-                    }
-                }
-            }
-        }
-
-        private void FindIncludes(bool isLocal, string curFolder, string filePath, IEnumerable<string> includePaths, List<string> includes)
-        {
-            bool fileExists = false;
-            string fullPath = null;
-            //if filePath is absolute change cur folder and split path
-            if (Path.IsPathRooted(filePath))
-            {
-                throw new NotSupportedException($"Could not add an absolute include: {filePath}!\nGU currently does not support absolute file paths! Please change this include to relative one!");
-                /*if (File.Exists(filePath))
-                {
-                    fullPath = filePath;
-                    fileExists = true;                    
-                }*/
-            }
-            else
-            {                
-                //1. if this is local file, first try to find it relative to the current folder
-                if (isLocal)
-                {
-                    fullPath = Path.Combine(curFolder, filePath);
-                    if (File.Exists(fullPath))
-                        fileExists = true;
-                }
-                //2. if not found check includes
-                if (!fileExists)
-                {
-                    foreach (string includePath in includePaths)
-                    {
-                        fullPath = Path.Combine(includePath, filePath);
-                        if (File.Exists(fullPath))
-                        {
-                            curFolder = includePath;
-                            fileExists = true;
-                            break;
-                        }
-                    }
-                }
-            }            
-            if (!fileExists)
-            {
-                Logger.LogError("Could not find include: " + filePath);
-                return;
-            }
-            //now check if this file has been already processed
-            if (includes.Contains(fullPath))
-                return;
-                
-            includes.Add(fullPath);
-            //get current folder
-            curFolder = Path.GetDirectoryName(fullPath);
-            //we have found the file, load and parse it, to recursively find all other includes
-            parseIncludes(fullPath, (local, includeName) =>
-            {
-                FindIncludes(local, curFolder, includeName, includePaths, includes);
-            });
-            //--------------------            
-        }
-
-        private string PrintIncludes(List<string> includes)
-        {
-            string str = "";
-            for (int i = 0; i < includes.Count; i++)
-            {
-                if (i != 0)
-                    str += ", ";
-
-                str += includes[i];
-            }
-            return str;
-        }
-
         private void CreateCompilationTasks(Project project, string platform)
         {
             string projectPath = project.DirectoryPath;
@@ -1044,17 +696,9 @@ namespace GolemBuild
                         List<string> includes = new List<string>();
 
                         //disabled as we are now preprocessing files
-                        //FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
+                        //IncludeParser.FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
 
-                        Logger.LogMessage(">> " + item.EvaluatedInclude);
-                        /*if (runVerbose)
-                        {
-                            Logger.LogMessage("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
-                        }
-                        else
-                        {
-                            Logger.LogMessage("   Found " + includes.Count + " includes");
-                        }*/                        
+                        Logger.LogMessage(">> " + item.EvaluatedInclude);           
 
                         var CLtask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                         CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
@@ -1100,17 +744,9 @@ namespace GolemBuild
                         ExcludePrecompiledHeader = true;
                 }
 
-                //FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
+                //IncludeParser.FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
 
                 Logger.LogMessage(">> " + item.EvaluatedInclude);
-                /*if (runVerbose)
-                {
-                    Logger.LogMessage("   Found " + includes.Count + " includes: " + PrintIncludes(includes));
-                }
-                else
-                {
-                    Logger.LogMessage("   Found " + includes.Count + " includes");
-                }*/
 
                 var Task = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
                 Task.GetType().GetProperty("Sources").SetValue(Task, new TaskItem[] { new TaskItem() });
@@ -1151,6 +787,14 @@ namespace GolemBuild
                     pch = MakeAbsolutePath(projectPath, item.GetMetadataValue("PrecompiledHeaderOutputFile"));
                 }
                 string pdb = MakeAbsolutePath(projectPath, item.GetMetadataValue("ProgramDataBaseFileName"));
+
+                //replace precompiled header file location to absolute
+                if (!string.IsNullOrEmpty(pch))
+                {
+                    Match match = Regex.Match(args, "/Fp\".+?\"");
+                    if (match.Success)
+                        args = args.Replace(match.Value,$"/Fp\"{pch}\"");
+                }
 
                 tasks.Add(new CompilationTask(Path.GetFullPath(Path.Combine(project.DirectoryPath, item.EvaluatedInclude)), compilerPath, args, pch, pdb, "", projectPath, includePaths, includes));
             }

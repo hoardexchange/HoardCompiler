@@ -1,14 +1,10 @@
 ﻿using GURestApi.Api;
 using GURestApi.Model;
-using ICSharpCode.SharpZipLib.GZip;
 using ICSharpCode.SharpZipLib.Tar;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.IO.Compression;
-using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -70,18 +66,6 @@ namespace GolemBuild
         {
             try
             {
-                /*if (deployment != spec)
-                {
-                    //either there is no deployment, or a change is requested
-                    if (deployment!=null)
-                    {
-                        golemApi.DropDeployment(Peer.NodeId, deploymentID);
-                        deployment = null;
-                        deploymentID = null;
-                    }
-                    deployment = spec;
-                    deploymentID = await golemApi.CreateDeploymentAsync(Peer.NodeId, deployment);
-                }*/
                 if (deployment == null)
                 {
                     deployment = spec;

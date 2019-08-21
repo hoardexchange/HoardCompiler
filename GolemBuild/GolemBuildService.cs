@@ -1,17 +1,10 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
-using System.Net;
 using System.Net.NetworkInformation;
-using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Threading.Tasks;
 using GURestApi.Api;
 using GURestApi.Model;
-using ICSharpCode.SharpZipLib.GZip;
-using ICSharpCode.SharpZipLib.Tar;
 
 namespace GolemBuild
 {
@@ -110,7 +103,7 @@ namespace GolemBuild
                 {
                     foreach (UnicastIPAddressInformation ip in item.GetIPProperties().UnicastAddresses)
                     {
-                        if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+                        if (ip.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                         {
                             output = ip.Address.ToString();
                         }

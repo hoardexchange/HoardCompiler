@@ -174,13 +174,15 @@ namespace GolemCompiler
         {
             if (vcp != null && !projects.Contains(vcp))
             {
-                //check references
+                //check direct references
                 foreach (VCReference r in vcp.VCReferences)
                 {
                     VCProjectReference vcref = r as VCProjectReference;
                     if (vcref != null && vcref.ReferencedProject != null)
                         AddProject(vcref.ReferencedProject.Object, projects);
                 }
+                //TODO: this only gets direct references to other projects, but does not check dependencies or project references set by other means
+                //this might need to be evaluated by explicitly loading the microsoft.build.evaluation.project and checking its references...
                 projects.Add(vcp);
             }
         }
