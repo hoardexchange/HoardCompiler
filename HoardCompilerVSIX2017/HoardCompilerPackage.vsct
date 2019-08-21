@@ -65,28 +65,28 @@
         <Parent guid="guidHoardCompilerPackageCmdSet" id="BuildMenuGroup" />
         <Icon guid="guidImages" id="bmpPic1" />
         <Strings>
-          <ButtonText>Golem distributed build solution</ButtonText>
+          <ButtonText>Hoard distributed build solution</ButtonText>
         </Strings>
       </Button>
       <Button guid="guidHoardCompilerPackageCmdSet" id="SlnBuildCommandId" priority="0x0100" type="Button">
         <Parent guid="guidHoardCompilerPackageCmdSet" id="SlnContextMenuGroup" />
         <Icon guid="guidImages" id="bmpPic1" />
         <Strings>
-          <ButtonText>Golem distributed build solution</ButtonText>
+          <ButtonText>Hoard distributed build solution</ButtonText>
         </Strings>
       </Button>
       <Button guid="guidHoardCompilerPackageCmdSet" id="ProjBuildCommandId" priority="0x0100" type="Button">
         <Parent guid="guidHoardCompilerPackageCmdSet" id="ProjContextMenuGroup" />
         <Icon guid="guidImages" id="bmpPic1" />
         <Strings>
-          <ButtonText>Golem distributed build project</ButtonText>
+          <ButtonText>Hoard distributed build project</ButtonText>
         </Strings>
       </Button>
       <Button guid="guidHoardCompilerPackageCmdSet" id="XProjBuildCommandId" priority="0x0100" type="Button">
         <Parent guid="guidHoardCompilerPackageCmdSet" id="XProjContextMenuGroup" />
         <Icon guid="guidImages" id="bmpPic1" />
         <Strings>
-          <ButtonText>Golem distributed build projects</ButtonText>
+          <ButtonText>Hoard distributed build projects</ButtonText>
         </Strings>
       </Button>
     </Buttons>
