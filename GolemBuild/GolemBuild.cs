@@ -20,6 +20,8 @@ namespace GolemBuild
 
         private List<CompilationTask> pchTasks = new List<CompilationTask>();
         private List<CompilationTask> tasks = new List<CompilationTask>();
+        private List<CustomBuildTask> customBuildTasks = new List<CustomBuildTask>();
+        private List<CustomBuildTask> customBuildTasksParallel = new List<CustomBuildTask>();
 
         public static string golemBuildTasksPath = "";
 
@@ -57,6 +59,16 @@ namespace GolemBuild
                 CreateCompilationTasks(project, platform);
 
                 CallPreBuildEvents(project);
+
+                if (customBuildTasks.Count > 0)
+                {
+                    Logger.LogMessage("Running Custom Build Tasks...");
+                    if (!CustomBuildTasks(project))
+                    {
+                        Logger.LogError("- Custom Build Tasks failed -");
+                        return false;
+                    }
+                }
 
                 if (pchTasks.Count > 0)
                 {
@@ -397,6 +409,191 @@ namespace GolemBuild
             return compilationSucceeded;
         }
 
+        private bool CustomBuildTasks(Project project)
+        {
+            string projectPath = Path.GetDirectoryName(project.FullPath);
+            string golemBuildPath = Path.Combine(projectPath, "GolemBuild");
+
+            // Sequential custom build tasks
+            for (int i = 0; i < customBuildTasks.Count; i++)
+            {
+                bool shouldDebugLog = false;
+
+                // Create batch file
+                string batchPath = Path.Combine(golemBuildPath, "customBuildTask" + i + ".bat");
+                StreamWriter batch = File.CreateText(batchPath);
+                batch.WriteLine("@echo off");
+                batch.WriteLine(customBuildTasks[i].Command);
+                batch.Close();
+
+                Process process = new Process();
+
+                process.StartInfo.FileName = "cmd.exe";
+                process.StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                process.StartInfo.UseShellExecute = false;
+                process.StartInfo.RedirectStandardInput = true;
+                process.StartInfo.RedirectStandardOutput = true;
+                process.StartInfo.RedirectStandardError = true;
+                process.StartInfo.CreateNoWindow = true;
+
+                process.Start();
+
+                if (shouldDebugLog)
+                {
+                    Logger.LogError("[DEBUG] " + batchPath);
+
+                    int index = i; // Make copy of i, else the lambda captures are wrong...
+                    process.OutputDataReceived += (sender, e) =>
+                    {
+                        if (e.Data != null)
+                        {
+                            string output = e.Data;
+                            if (output.Contains(" error") || output.Contains("fatal error"))
+                            {
+                                Logger.LogError("[ERROR] " + customBuildTasks[index].FilePath + ": " + output);
+                            }
+                            else if (output.Contains("warning"))
+                            {
+                                Logger.LogMessage("[WARNING] " + customBuildTasks[index].FilePath + ": " + output);
+                            }
+                        }
+                    };
+
+                    process.ErrorDataReceived += (sender, e) =>
+                    {
+                        if (e.Data != null)
+                        {
+                            string output = e.Data;
+                            Logger.LogError("[ERROR] " + customBuildTasks[index].FilePath + ": " + output);
+                        }
+                    };
+                }
+
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
+                if (customBuildTasks[i].Message.Length > 0)
+                    Logger.LogMessage(customBuildTasks[i].Message);
+                else
+                    Logger.LogMessage("CustomBuildTask" + i);
+
+                process.StandardInput.WriteLine("@echo off"); // Echo off
+                process.StandardInput.WriteLine(projectPath[0] + ":"); // Change drive
+                process.StandardInput.WriteLine("cd \"" + projectPath + "\""); // CD
+                process.StandardInput.WriteLine("\"" + batchPath + "\""); // Execute task
+                process.StandardInput.WriteLine("exit");
+
+                process.WaitForExit();
+            }
+
+            // Parallel custom build tasks
+            Process[] processes = new Process[customBuildTasksParallel.Count];
+            bool[] hasFinished = new bool[customBuildTasksParallel.Count];
+
+            // Start all custom build processes
+            for (int i = 0; i < customBuildTasksParallel.Count; i++)
+            {
+                bool shouldDebugLog = false;
+
+                // Create batch file
+                string batchPath = Path.Combine(golemBuildPath, "customBuildTaskParallel" + i + ".bat");
+                StreamWriter batch = File.CreateText(batchPath);
+                batch.WriteLine("@echo off");
+                batch.WriteLine(customBuildTasksParallel[i].Command);
+                batch.Close();
+
+                processes[i] = new Process();
+
+                processes[i].StartInfo.FileName = "cmd.exe";
+                processes[i].StartInfo.WindowStyle = ProcessWindowStyle.Hidden;
+                processes[i].StartInfo.UseShellExecute = false;
+                processes[i].StartInfo.RedirectStandardInput = true;
+                processes[i].StartInfo.RedirectStandardOutput = true;
+                processes[i].StartInfo.RedirectStandardError = true;
+                processes[i].StartInfo.CreateNoWindow = true;
+
+                processes[i].Start();
+
+                if (shouldDebugLog)
+                {
+                    Logger.LogError("[DEBUG] " + batchPath);
+
+                    int index = i; // Make copy of i, else the lambda captures are wrong...
+                    processes[i].OutputDataReceived += (sender, e) =>
+                    {
+                        if (e.Data != null)
+                        {
+                            string output = e.Data;
+                            if (output.Contains(" error") || output.Contains("fatal error"))
+                            {
+                                Logger.LogError("[ERROR] " + tasks[index].FilePath + ": " + output);
+                            }
+                            else if (output.Contains("warning"))
+                            {
+                                Logger.LogMessage("[WARNING] " + tasks[index].FilePath + ": " + output);
+                            }
+                        }
+                    };
+
+                    processes[i].ErrorDataReceived += (sender, e) =>
+                    {
+                        if (e.Data != null)
+                        {
+                            string output = e.Data;
+                            Logger.LogError("[ERROR] " + tasks[index].FilePath + ": " + output);
+                        }
+                    };
+                }
+
+                processes[i].BeginOutputReadLine();
+                processes[i].BeginErrorReadLine();
+
+                if (customBuildTasksParallel[i].Message.Length > 0)
+                    Logger.LogMessage("[STARTING] " + customBuildTasksParallel[i].Message);
+                else
+                    Logger.LogMessage("[STARTING] CustomBuildTaskParallel" + i);
+
+                processes[i].StandardInput.WriteLine("@echo off"); // Echo off
+                processes[i].StandardInput.WriteLine(projectPath[0] + ":"); // Change drive
+                processes[i].StandardInput.WriteLine("cd \"" + projectPath + "\""); // CD
+                processes[i].StandardInput.WriteLine("\"" + batchPath + "\""); // Execute task
+                processes[i].StandardInput.WriteLine("exit");
+            }
+
+            // Finish all compilation processes
+            bool stillRunning = true;
+            while (stillRunning)
+            {
+                bool allFinished = true;
+                for (int i = 0; i < customBuildTasksParallel.Count; i++)
+                {
+                    if (processes[i].HasExited)
+                    {
+                        if (!hasFinished[i])
+                        {
+                            hasFinished[i] = true;
+
+                            if (customBuildTasksParallel[i].Message.Length > 0)
+                                Logger.LogMessage("[SUCCESS] " + customBuildTasksParallel[i].Message);
+                            else
+                                Logger.LogMessage("[SUCCESS] CustomBuildTaskParallel" + i);
+                        }
+                    }
+                    else
+                    {
+                        allFinished = false;
+                    }
+                }
+
+                if (allFinished)
+                    stillRunning = false;
+                else
+                    Thread.Sleep(25);
+            }
+
+            return true;
+        }
+
         private bool BuildTasks(Project project)
         {
             string projectPath = Path.GetDirectoryName(project.FullPath);
@@ -656,6 +853,23 @@ namespace GolemBuild
                 {
                     if (path.Length > 0 && !includePaths.Contains(path))
                         includePaths.Add(path.Trim('\\'));
+                }
+            }
+
+            var customBuildItems = project.GetItems("CustomBuild");
+            foreach (var item in customBuildItems)
+            {
+                string command = item.GetMetadata("Command").EvaluatedValue;
+                string message = item.GetMetadata("Message").EvaluatedValue;
+                bool buildParallel = item.HasMetadata("BuildInParallel") && item.GetMetadata("BuildInParallel").EvaluatedValue == "true";
+
+                if (buildParallel)
+                {
+                    customBuildTasksParallel.Add(new CustomBuildTask(item.EvaluatedInclude, command, message, buildParallel));
+                }
+                else
+                {
+                    customBuildTasks.Add(new CustomBuildTask(item.EvaluatedInclude, command, message, buildParallel));
                 }
             }
 
