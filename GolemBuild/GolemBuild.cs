@@ -634,7 +634,7 @@ namespace GolemBuild
         private void CreateCompilationTasks(Project project, string platform)
         {
             string projectPath = project.DirectoryPath;
-            //in VS2017 this semms to be the proper one
+            //in VS2017 this seems to be the proper one
             string VCTargetsPath = project.GetPropertyValue("VCTargetsPathEffective");
             if (string.IsNullOrEmpty(VCTargetsPath))
             {
@@ -655,59 +655,65 @@ namespace GolemBuild
                 foreach (string path in incPaths)
                 {
                     if (path.Length > 0 && !includePaths.Contains(path))
-                        includePaths.Add(path.Trim(';'));
+                        includePaths.Add(path.Trim('\\'));
                 }
             }
 
             var cItems = project.GetItems("ClCompile");
 
             //list precompiled headers
-            foreach (var item in cItems)
+            Logger.LogMessage("Disabling pch tasks as it makes no sense when precompiling cpp files...");
+            if (false)
             {
-                if (item.DirectMetadata.Where(dmd => dmd.Name == "AdditionalIncludeDirectories").Any())
+                foreach (var item in cItems)
                 {
-                    string incPath = item.GetMetadata("AdditionalIncludeDirectories").EvaluatedValue;
-                    string[] incPaths = incPath.Split(';');
-
-                    foreach (string path in incPaths)
+                    if (item.DirectMetadata.Where(dmd => dmd.Name == "AdditionalIncludeDirectories").Any())
                     {
-                        if (!string.IsNullOrEmpty(path))
+                        string incPath = item.GetMetadata("AdditionalIncludeDirectories").EvaluatedValue;
+                        string[] incPaths = incPath.Split(';');
+
+                        foreach (string path in incPaths)
                         {
-                            string tPath = path;
-                            if (!Path.IsPathRooted(path))
+                            if (!string.IsNullOrEmpty(path))
                             {
-                                tPath = Path.GetFullPath(Path.Combine(project.DirectoryPath, path));
+                                string tPath = path;
+                                if (!Path.IsPathRooted(path))
+                                {
+                                    tPath = Path.GetFullPath(Path.Combine(project.DirectoryPath, path));
+                                }
+                                if (tPath.Length > 0 && !includePaths.Contains(tPath))
+                                {
+                                    includePaths.Add(tPath.Trim('\\'));
+                                }
                             }
-                            if (!includePaths.Contains(tPath))
-                                includePaths.Add(tPath);
                         }
                     }
-                }
 
-                if (item.DirectMetadata.Any())
-                {
-                    if (item.DirectMetadata.Where(dmd => dmd.Name == "ExcludedFromBuild" && dmd.EvaluatedValue == "true").Any())
+                    if (item.DirectMetadata.Any())
                     {
-                        //skip
-                        continue;
-                    }
-                    if (item.DirectMetadata.Where(dmd => dmd.Name == "PrecompiledHeader" && dmd.EvaluatedValue == "Create").Any())
-                    {
-                        List<string> includes = new List<string>();
+                        if (item.DirectMetadata.Where(dmd => dmd.Name == "ExcludedFromBuild" && dmd.EvaluatedValue == "true").Any())
+                        {
+                            //skip
+                            continue;
+                        }
+                        if (item.DirectMetadata.Where(dmd => dmd.Name == "PrecompiledHeader" && dmd.EvaluatedValue == "Create").Any())
+                        {
+                            List<string> includes = new List<string>();
 
-                        //disabled as we are now preprocessing files
-                        //IncludeParser.FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
+                            //disabled as we are now preprocessing files
+                            //IncludeParser.FindIncludes(true, project.DirectoryPath, item.EvaluatedInclude, includePaths, includes);
 
-                        Logger.LogMessage(">> " + item.EvaluatedInclude);           
+                            Logger.LogMessage(">> " + item.EvaluatedInclude);
 
-                        var CLtask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
-                        CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
-                        string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ProgramDataBaseFileName", "ObjectFileName", "AssemblerListingLocation"}, item.Metadata);//FS or MP?
+                            var CLtask = Activator.CreateInstance(CPPTasksAssembly.GetType("Microsoft.Build.CPPTasks.CL"));
+                            CLtask.GetType().GetProperty("Sources").SetValue(CLtask, new TaskItem[] { new TaskItem() });
+                            string args = GenerateTaskCommandLine(CLtask, new string[] { "PrecompiledHeaderOutputFile", "ProgramDataBaseFileName", "ObjectFileName", "AssemblerListingLocation" }, item.Metadata);//FS or MP?
 
-                        string pchOutputFile = MakeAbsolutePath(projectPath, item.GetMetadataValue("PrecompiledHeaderOutputFile"));
-                        string pdbOutputFile = MakeAbsolutePath(projectPath, item.GetMetadataValue("ProgramDataBaseFileName"));
+                            string pchOutputFile = MakeAbsolutePath(projectPath, item.GetMetadataValue("PrecompiledHeaderOutputFile"));
+                            string pdbOutputFile = MakeAbsolutePath(projectPath, item.GetMetadataValue("ProgramDataBaseFileName"));
 
-                        pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", pdbOutputFile, pchOutputFile, projectPath, includePaths, includes));
+                            pchTasks.Add(new CompilationTask(item.EvaluatedInclude, compilerPath, args, "", pdbOutputFile, pchOutputFile, projectPath, includePaths, includes));
+                        }
                     }
                 }
             }
@@ -725,8 +731,10 @@ namespace GolemBuild
                         if (!string.IsNullOrEmpty(path))
                         {
                             string tPath = MakeAbsolutePath(projectPath,path);
-                            if (!includePaths.Contains(tPath))
-                                includePaths.Add(tPath);
+                            if (tPath.Length > 0 && !includePaths.Contains(tPath))
+                            {
+                                includePaths.Add(tPath.Trim('\\'));
+                            }
                         }
                     }
                 }
