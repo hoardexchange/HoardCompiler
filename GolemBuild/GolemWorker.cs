@@ -381,6 +381,8 @@ namespace GolemBuild
 
                         proc.Start();
 
+                        System.Text.StringBuilder outputStr = new System.Text.StringBuilder();
+
                         proc.OutputDataReceived += (sender, e) =>
                         {
                             if (e.Data != null)
@@ -394,14 +396,15 @@ namespace GolemBuild
                         {
                             if (e.Data != null)
                             {
-                                string output = e.Data;
-                                Logger.LogMessage(output);
+                                outputStr.AppendLine(e.Data);
                             }
                         };
                         proc.BeginOutputReadLine();
                         proc.BeginErrorReadLine();
 
                         proc.WaitForExit();
+
+                        Logger.LogMessage(outputStr.ToString());
 
                         if (proc.ExitCode == 0)
                         {
