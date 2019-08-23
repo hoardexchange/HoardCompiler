@@ -1,3 +1,3 @@
 [submodule "gurestapi"]
 	path = gurestapi
-	url = https://ed_warf@bitbucket.org/treshombres/gurestapi.git
+url=https://github.com/hoardexchange/GURestApi.git
